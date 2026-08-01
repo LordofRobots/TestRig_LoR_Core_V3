@@ -24,7 +24,7 @@ The release-builder PC requires:
 - Python 3 with `pyinstaller`, `esptool`, and `pyserial`;
 - Arduino IDE 2.x in its standard installation directory;
 - Espressif's ESP32 Arduino core and FastLED;
-- Inno Setup 6, with a commercial license activated when the package is built for commercial use.
+- NSIS 3.x. NSIS is open source and permits commercial use without a paid license.
 
 Install the Python packaging tools with:
 
@@ -32,10 +32,10 @@ Install the Python packaging tools with:
 py -3 -m pip install --user pyinstaller esptool pyserial
 ```
 
-Install Inno Setup with:
+Install NSIS with:
 
 ```powershell
-winget install --id JRSoftware.InnoSetup --exact
+winget install --id NSIS.NSIS --exact
 ```
 
 ## Build
@@ -52,13 +52,13 @@ The script performs a clean release build:
 2. creates a versioned firmware ZIP and SHA-256 manifest;
 3. builds a standalone esptool uploader;
 4. freezes the UI and embeds the branding, updater, and verified fallback firmware;
-5. compiles the Inno Setup package;
+5. compiles the free NSIS package;
 6. creates the update manifest and collects the three GitHub Release assets.
 
 The output is:
 
 ```text
-installer\output\LoR_Core_V3_Test_Station_Setup_1.14.0.exe
+installer\output\LoR_Core_V3_Test_Station_Setup_1.14.1.exe
 ```
 
 Ready-to-publish assets are collected in:
@@ -72,7 +72,7 @@ installer\output\release
 Create a normal, published GitHub Release in `LordofRobots/TestRig_LoR_Core_V3` and attach all three files from `installer\output\release`:
 
 ```text
-LoR_Core_V3_Test_Station_Setup_1.14.0.exe
+LoR_Core_V3_Test_Station_Setup_1.14.1.exe
 lor-core-v3-firmware-production-test-1.14.zip
 lor-core-v3-update-manifest.json
 ```
@@ -113,13 +113,12 @@ The ProgramData directory grants standard users write access. Results are delibe
 
 For every release:
 
-1. activate the organization's Inno Setup commercial license on the release-builder account;
-2. run the installer on a clean Windows test PC;
-3. confirm the desktop and Start Menu shortcuts use the LoR icon;
-4. launch the UI and confirm the animated logo, Live Test, Test History, and COM-port detection;
-5. connect a known-good LoR Core and complete one full test using the bundled uploader;
-6. confirm the CSV record appears under ProgramData;
-7. calculate and publish the setup file's SHA-256 checksum;
-8. retain the exact installer alongside the manufacturing release record.
+1. run the installer on a clean Windows test PC;
+2. confirm the desktop and Start Menu shortcuts use the LoR icon;
+3. launch the UI and confirm the animated logo, Live Test, Test History, and COM-port detection;
+4. connect a known-good LoR Core and complete one full test using the bundled uploader;
+5. confirm the CSV record appears under ProgramData;
+6. calculate and publish the setup file's SHA-256 checksum;
+7. retain the exact installer alongside the manufacturing release record.
 
-The generated installer is not code-signed. Windows SmartScreen may therefore show an unknown-publisher warning on other PCs. A production release should be signed with the Lord of Robots Authenticode certificate before distribution. The evaluation installer built without an activated Inno Setup commercial license must not be treated as the final commercially distributed package.
+The generated installer is not code-signed. Windows SmartScreen may therefore show an unknown-publisher warning on other PCs. Signing with a Lord of Robots Authenticode certificate is recommended when one becomes available, but it is not a licensing requirement. NSIS itself is free for personal and commercial use.

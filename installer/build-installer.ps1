@@ -14,14 +14,13 @@ $toolOutputDir = Join-Path $workDir 'tools'
 $firmwareStageDir = Join-Path $workDir 'firmware-package'
 $releaseDir = Join-Path $outputDir 'release'
 $firmwareBuildDir = Join-Path $projectDir 'build\lor_core_v3_production_test'
-$appVersion = '1.14.0'
+$appVersion = '1.14.1'
 $arduinoCli = 'C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe'
-$isccCandidates = @(
-    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
-    'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
-    'C:\Program Files\Inno Setup 6\ISCC.exe'
+$makeNsisCandidates = @(
+    'C:\Program Files (x86)\NSIS\makensis.exe',
+    'C:\Program Files\NSIS\makensis.exe'
 )
-$iscc = $isccCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+$makeNsis = $makeNsisCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
     throw 'Python 3 with the Windows py launcher is required to build the installer.'
@@ -29,8 +28,8 @@ if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
 if (-not (Test-Path -LiteralPath $arduinoCli)) {
     throw 'Arduino IDE 2.x was not found in its standard installation directory.'
 }
-if (-not $iscc) {
-    throw 'Inno Setup 6 was not found. Install it with: winget install JRSoftware.InnoSetup'
+if (-not $makeNsis) {
+    throw 'NSIS was not found. Install it with: winget install NSIS.NSIS'
 }
 
 & py -3 -m PyInstaller --version *> $null
@@ -125,8 +124,8 @@ Write-Host 'Building desktop application...'
 if ($LASTEXITCODE -ne 0) { throw 'Desktop application build failed.' }
 
 Write-Host 'Compiling Windows installer...'
-& $iscc (Join-Path $installerDir 'LoR_Core_V3_Test_Station.iss')
-if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+& $makeNsis /WX /V3 (Join-Path $installerDir 'LoR_Core_V3_Test_Station.nsi')
+if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed.' }
 
 $setup = Get-ChildItem -LiteralPath $outputDir -Filter 'LoR_Core_V3_Test_Station_Setup_*.exe' |
     Select-Object -First 1

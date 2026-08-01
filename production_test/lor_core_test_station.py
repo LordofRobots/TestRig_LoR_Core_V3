@@ -49,7 +49,7 @@ FIRMWARE_CACHE_ROOT = DATA_ROOT / "firmware"
 FIRMWARE_MANIFEST_NAME = "lor-core-v3-firmware-manifest.json"
 UPDATE_MANIFEST_NAME = "lor-core-v3-update-manifest.json"
 GITHUB_RELEASES_API = "https://api.github.com/repos/LordofRobots/TestRig_LoR_Core_V3/releases?per_page=10"
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.14.1"
 UPDATE_TIMEOUT_SECONDS = 10
 MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 FIRMWARE_FLASH_LAYOUT = {
@@ -907,7 +907,7 @@ class TestStation:
             os.startfile(
                 str(installer),
                 "open",
-                "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+                "/S",
             )
         except OSError as exc:
             self.update_status_var.set("APP UPDATE NEEDS ATTENTION")

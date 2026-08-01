@@ -23,7 +23,7 @@ Every attempted test is appended to a local CSV audit file. The Test History wor
 The recommended deployment is the Windows installer:
 
 ```text
-LoR_Core_V3_Test_Station_Setup_1.14.0.exe
+LoR_Core_V3_Test_Station_Setup_1.14.1.exe
 ```
 
 Run the setup program as an administrator. It installs the application for all users, creates Lord of Robots Start Menu and desktop shortcuts, and registers an uninstaller in Windows **Installed apps**. The packaged application includes Python, pyserial, esptool, the branded assets, and the verified `production-test-1.14` firmware image. A production PC does not need Python, Arduino IDE, the ESP32 board package, or FastLED.
