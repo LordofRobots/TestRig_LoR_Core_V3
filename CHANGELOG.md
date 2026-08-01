@@ -10,6 +10,12 @@ All notable production changes are recorded here. Application versions follow se
 - CH340 detection, native ESP32 ROM flashing, guided checks, CSV history, and export
 - Hash-verified synchronization from the common GitHub Release firmware package
 - Android emulator build, install, launch, and responsive-layout validation
+- Phone-first portrait UI with stacked live-test and history panels
+
+### Fixed
+
+- Auto-start now cancels immediately when disabled or when the armed USB device is detached
+- ESP32 bootloader entry retries with extended timing and reports whether any serial bytes were received
 
 ## [1.14.2] - 2026-08-01
 

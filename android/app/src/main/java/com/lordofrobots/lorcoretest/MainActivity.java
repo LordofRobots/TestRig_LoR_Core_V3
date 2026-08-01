@@ -37,6 +37,7 @@ public final class MainActivity extends Activity {
     private CountDownLatch ledLatch;
     private volatile Boolean ledAnswer;
     private int armedDeviceId = -1;
+    private Runnable pendingAutoStart;
 
     private final BroadcastReceiver usbReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -48,7 +49,7 @@ public final class MainActivity extends Activity {
             } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) refreshUsb(true);
             else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                if (device != null && device.getDeviceId() == armedDeviceId) armedDeviceId = -1;
+                if (device != null && device.getDeviceId() == armedDeviceId) cancelAutoStart();
                 refreshUsb(false);
             }
         }
@@ -80,28 +81,41 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.rgb(243,246,250));
         root.setPadding(dp(24), dp(16), dp(24), dp(18)); setContentView(root);
 
-        LinearLayout header = row(); header.setGravity(Gravity.CENTER_VERTICAL); root.addView(header, lp(-1, dp(68)));
+        LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.VERTICAL); root.addView(header, lp(-1, dp(104)));
+        LinearLayout brandRow = row(); brandRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(brandRow, lp(-1, dp(54)));
         ImageView logo = new ImageView(this); logo.setImageResource(com.lordofrobots.lorcoretest.R.drawable.lor_logo); logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        header.addView(logo, lp(dp(250), -1));
-        TextView title = text("LoR Core V3  /  ANDROID PRODUCTION", 18, BLUE, true); header.addView(title, weight(1));
-        connectionText = pill("NO BOARD", Color.rgb(102,117,138)); header.addView(connectionText, lp(dp(190), dp(42)));
+        brandRow.addView(logo, lp(dp(154), -1));
+        TextView title = text("CORE V3  ·  " + BuildConfig.VERSION_NAME, 13, BLUE, true); title.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); title.setSingleLine(true); brandRow.addView(title, weight(1));
+        LinearLayout controlRow = row(); controlRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(controlRow, lp(-1, dp(50)));
+        connectionText = pill("NO BOARD", Color.rgb(102,117,138)); controlRow.addView(connectionText, weight(1));
         autoStart = new Switch(this); autoStart.setText(" AUTO-START"); autoStart.setTextColor(BLUE); autoStart.setTextSize(13); autoStart.setChecked(getPreferences(0).getBoolean("auto", true));
-        autoStart.setOnCheckedChangeListener((v, checked) -> getPreferences(0).edit().putBoolean("auto", checked).apply()); header.addView(autoStart, lp(dp(160), dp(48)));
+        autoStart.setOnCheckedChangeListener((v, checked) -> { getPreferences(0).edit().putBoolean("auto", checked).apply(); if (!checked) cancelAutoStart(); }); controlRow.addView(autoStart, lp(dp(150), dp(48)));
 
         LinearLayout tabs = row(); root.addView(tabs, lp(-1, dp(50)));
         liveTab = button("LIVE TEST", BLUE); historyTab = button("TEST HISTORY", Color.rgb(102,117,138));
         liveTab.setOnClickListener(v -> showPage(true)); historyTab.setOnClickListener(v -> showPage(false));
-        tabs.addView(liveTab, lp(dp(170), dp(44))); tabs.addView(space(dp(10), 1)); tabs.addView(historyTab, lp(dp(170), dp(44)));
+        tabs.addView(liveTab, weight(1)); tabs.addView(space(dp(10), 1)); tabs.addView(historyTab, weight(1));
         firmwareText = text("APK " + BuildConfig.VERSION_NAME + "  •  SHARED FIRMWARE", 12, Color.rgb(102,117,138), false);
-        firmwareText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); tabs.addView(firmwareText, weight(1));
+        firmwareText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
 
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); root.addView(body, vWeight(1));
         livePage = buildLivePage(); historyPage = buildHistoryPage(); showPage(true);
     }
 
     private LinearLayout buildLivePage() {
-        LinearLayout page = row();
-        LinearLayout setup = card(); setup.setPadding(dp(20),dp(18),dp(20),dp(18)); page.addView(setup, lp(dp(360), -1));
+        LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout active = card(); active.setPadding(dp(18),dp(14),dp(18),dp(14)); page.addView(active, lp(-1, dp(330)));
+        active.addView(text("LIVE PRODUCTION TEST", 13, BLUE, true));
+        instructionText = text("Connect the LoR Core with USB-C and apply the 6–12 V fixture supply.", 21, Color.rgb(20,36,58), true);
+        instructionText.setGravity(Gravity.CENTER_VERTICAL); instructionText.setPadding(0,dp(5),0,dp(5)); active.addView(instructionText, lp(-1, dp(100)));
+        LinearLayout progressRow = row(); progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setMax(100); progress.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
+        progressRow.addView(progress, weight(1)); percentText = text("0%", 13, BLUE, true); percentText.setGravity(Gravity.END|Gravity.CENTER_VERTICAL); progressRow.addView(percentText, lp(dp(52),dp(30))); active.addView(progressRow, lp(-1,dp(34)));
+        LinearLayout ledRow = row(); ledGoodButton = button("LEDS LOOK GOOD", GREEN); ledFailButton = button("LED FAILURE", RED); ledGoodButton.setVisibility(View.GONE); ledFailButton.setVisibility(View.GONE);
+        ledGoodButton.setOnClickListener(v -> answerLed(true)); ledFailButton.setOnClickListener(v -> answerLed(false)); ledRow.addView(ledGoodButton, weight(1)); ledRow.addView(space(dp(8),1)); ledRow.addView(ledFailButton, weight(1)); active.addView(ledRow, lp(-1,dp(48)));
+        ScrollView resultsScroll = new ScrollView(this); resultList = new LinearLayout(this); resultList.setOrientation(LinearLayout.VERTICAL); resultsScroll.addView(resultList); active.addView(resultsScroll, vWeight(1));
+
+        page.addView(space(1,dp(12)));
+        LinearLayout setup = card(); setup.setPadding(dp(18),dp(14),dp(18),dp(14)); page.addView(setup, vWeight(1));
         setup.addView(text("TEST SETUP", 13, BLUE, true));
         ScrollView setupScroll = new ScrollView(this); setupScroll.setFillViewport(true);
         LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); setupScroll.addView(form); setup.addView(setupScroll, vWeight(1));
@@ -112,27 +126,17 @@ public final class MainActivity extends Activity {
         runButton = button("CONNECT A LoR CORE", Color.rgb(150,160,174)); runButton.setEnabled(false); runButton.setTextSize(18); runButton.setOnClickListener(v -> startTest());
         setup.addView(runButton, marginLp(-1, dp(64), 0, dp(10), 0, 0));
 
-        page.addView(space(dp(16),1));
-        LinearLayout active = card(); active.setPadding(dp(22),dp(18),dp(22),dp(18)); page.addView(active, weight(1));
-        active.addView(text("LIVE PRODUCTION TEST", 13, BLUE, true));
-        instructionText = text("Connect the LoR Core with USB-C and apply the 6–12 V fixture supply.", 24, Color.rgb(20,36,58), true);
-        instructionText.setGravity(Gravity.CENTER_VERTICAL); instructionText.setPadding(0,dp(8),0,dp(8)); active.addView(instructionText, lp(-1, dp(90)));
-        LinearLayout progressRow = row(); progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setMax(100); progress.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
-        progressRow.addView(progress, weight(1)); percentText = text("0%", 13, BLUE, true); percentText.setGravity(Gravity.END|Gravity.CENTER_VERTICAL); progressRow.addView(percentText, lp(dp(58),dp(32))); active.addView(progressRow, lp(-1,dp(40)));
-        LinearLayout ledRow = row(); ledGoodButton = button("LEDS LOOK GOOD", GREEN); ledFailButton = button("LED FAILURE", RED); ledGoodButton.setVisibility(View.GONE); ledFailButton.setVisibility(View.GONE);
-        ledGoodButton.setOnClickListener(v -> answerLed(true)); ledFailButton.setOnClickListener(v -> answerLed(false)); ledRow.addView(ledGoodButton, weight(1)); ledRow.addView(space(dp(12),1)); ledRow.addView(ledFailButton, weight(1)); active.addView(ledRow, lp(-1,dp(54)));
-        ScrollView resultsScroll = new ScrollView(this); resultList = new LinearLayout(this); resultList.setOrientation(LinearLayout.VERTICAL); resultsScroll.addView(resultList); active.addView(resultsScroll, vWeight(1));
         return page;
     }
 
     private LinearLayout buildHistoryPage() {
-        LinearLayout page = row();
-        LinearLayout left = card(); left.setPadding(dp(18),dp(16),dp(18),dp(16)); page.addView(left, lp(dp(470),-1));
+        LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout left = card(); left.setPadding(dp(16),dp(14),dp(16),dp(14)); page.addView(left, lp(-1,dp(280)));
         LinearLayout heading = row(); heading.setGravity(Gravity.CENTER_VERTICAL); heading.addView(text("SAVED TESTS",13,BLUE,true), weight(1));
         Button export = button("EXPORT CSV", BLUE); export.setOnClickListener(v -> beginExport()); heading.addView(export, lp(dp(140),dp(42))); left.addView(heading, lp(-1,dp(50)));
         ScrollView historyScroll = new ScrollView(this); historyList = new LinearLayout(this); historyList.setOrientation(LinearLayout.VERTICAL); historyScroll.addView(historyList); left.addView(historyScroll, vWeight(1));
-        page.addView(space(dp(16),1));
-        LinearLayout right = card(); right.setPadding(dp(22),dp(18),dp(22),dp(18)); page.addView(right, weight(1)); right.addView(text("TEST DETAILS",13,BLUE,true));
+        page.addView(space(1,dp(12)));
+        LinearLayout right = card(); right.setPadding(dp(18),dp(14),dp(18),dp(14)); page.addView(right, vWeight(1)); right.addView(text("TEST DETAILS",13,BLUE,true));
         historyDetails = text("Select a saved board test.",16,Color.rgb(20,36,58),false); historyDetails.setTextIsSelectable(true); historyDetails.setPadding(0,dp(14),0,0);
         ScrollView detailsScroll = new ScrollView(this); detailsScroll.addView(historyDetails); right.addView(detailsScroll, vWeight(1));
         return page;
@@ -169,8 +173,21 @@ public final class MainActivity extends Activity {
     private void onUsbReady(UsbDevice device) {
         setConnection("LoR CORE READY", true); runButton.setText("RUN PRODUCTION TEST"); runButton.setEnabled(!running); runButton.setBackground(bg(GREEN,14)); runButton.setOnClickListener(v -> startTest());
         if (autoStart.isChecked() && !running && armedDeviceId != device.getDeviceId()) {
-            armedDeviceId = device.getDeviceId(); runButton.postDelayed(this::startTest, 1200);
+            cancelAutoStart();
+            final int deviceId = device.getDeviceId();
+            armedDeviceId = deviceId;
+            pendingAutoStart = () -> {
+                pendingAutoStart = null;
+                if (autoStart.isChecked() && !running && detectedDriver != null && detectedDriver.getDevice().getDeviceId() == deviceId) startTest();
+            };
+            runButton.postDelayed(pendingAutoStart, 1200);
         }
+    }
+
+    private void cancelAutoStart() {
+        if (pendingAutoStart != null && runButton != null) runButton.removeCallbacks(pendingAutoStart);
+        pendingAutoStart = null;
+        armedDeviceId = -1;
     }
 
     private void setConnection(String text, boolean ready) {

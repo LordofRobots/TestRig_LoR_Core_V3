@@ -16,13 +16,21 @@ final class Esp32Flasher {
 
     void flash(List<FirmwareRepository.Image> images) throws Exception {
         listener.status("Entering ESP32 download mode...");
-        enterBootloader();
+        enterBootloader(100, 100);
         boolean synced = false;
-        for (int attempt = 0; attempt < 7 && !synced; attempt++) {
-            try { command(SYNC, syncPayload(), 0, 1500); synced = true; }
-            catch (Exception ignored) { Thread.sleep(100); }
+        Exception lastSyncError = null;
+        for (int attempt = 0; attempt < 8 && !synced; attempt++) {
+            if (attempt == 3) {
+                listener.status("Retrying ESP32 bootloader entry with extended timing...");
+                enterBootloader(250, 250);
+            }
+            try { command(SYNC, syncPayload(), 0, 1200); synced = true; }
+            catch (Exception error) { lastSyncError = error; Thread.sleep(80); }
         }
-        if (!synced) throw new IllegalStateException("ESP32 bootloader did not respond. Check USB-C and automatic BOOT/RESET wiring.");
+        if (!synced) {
+            String detail = lastSyncError == null ? "no serial response" : lastSyncError.getMessage();
+            throw new IllegalStateException("ESP32 bootloader did not respond (" + detail + "). Check automatic BOOT/RESET wiring.");
+        }
 
         long total = 0, complete = 0;
         for (FirmwareRepository.Image image : images) total += image.data.length;
@@ -51,11 +59,12 @@ final class Esp32Flasher {
         hardReset();
     }
 
-    private void enterBootloader() throws Exception {
-        serial.setLines(false, true); Thread.sleep(100);
-        serial.setLines(true, false); Thread.sleep(100);
-        serial.setLines(false, false); Thread.sleep(50);
+    private void enterBootloader(int resetHoldMs, int bootSettleMs) throws Exception {
         serial.drain();
+        serial.setLines(false, false); Thread.sleep(50);
+        serial.setLines(false, true); Thread.sleep(resetHoldMs);
+        serial.setLines(true, false); Thread.sleep(bootSettleMs);
+        serial.setLines(false, false); Thread.sleep(100);
     }
 
     private void hardReset() throws Exception {
@@ -92,12 +101,17 @@ final class Esp32Flasher {
     private byte[] readFrame(int timeoutMs) throws Exception {
         long deadline = System.currentTimeMillis() + timeoutMs;
         ByteArrayOutputStream frame = new ByteArrayOutputStream();
+        ByteArrayOutputStream observed = new ByteArrayOutputStream();
         boolean started = false, escaped = false;
         while (System.currentTimeMillis() < deadline) {
             byte[] part = serial.readSome(512, (int) Math.min(100, Math.max(1, deadline - System.currentTimeMillis())));
             for (byte raw : part) {
                 int value = raw & 0xff;
-                if (!started) { if (value == 0xc0) started = true; continue; }
+                if (!started) {
+                    if (value == 0xc0) started = true;
+                    else if (observed.size() < 24) observed.write(value);
+                    continue;
+                }
                 if (value == 0xc0) { if (frame.size() > 0) return frame.toByteArray(); else continue; }
                 if (escaped) {
                     if (value == 0xdc) frame.write(0xc0); else if (value == 0xdd) frame.write(0xdb); else { frame.write(0xdb); frame.write(value); }
@@ -105,7 +119,12 @@ final class Esp32Flasher {
                 } else if (value == 0xdb) escaped = true; else frame.write(value);
             }
         }
-        throw new java.util.concurrent.TimeoutException("Timed out waiting for ESP32 loader packet");
+        StringBuilder message = new StringBuilder("timed out waiting for loader packet");
+        if (observed.size() > 0) {
+            message.append("; received ");
+            for (byte value : observed.toByteArray()) message.append(String.format("%02X", value & 0xff));
+        } else message.append("; received 0 bytes");
+        throw new java.util.concurrent.TimeoutException(message.toString());
     }
 
     private static byte[] slip(byte[] data) {

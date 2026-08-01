@@ -4,13 +4,13 @@ The Android client is a lightweight, native companion to the Windows production 
 
 ## Current status
 
-Version `0.1.0` is an engineering preview. The APK builds, installs, launches, and passes emulator UI smoke testing. USB-host flashing must be validated on the intended Android tablet and a real LoR Core V3 before production use.
+Version `0.1.0` is an engineering preview. The APK builds, installs, and runs in portrait mode on a Pixel 6. Real-device validation has confirmed Android USB-host operation, CH340 detection, and persistent USB permission. Automatic ROM flashing and the complete test workflow must still pass the production-validation checklist before production use.
 
 ## Device requirements
 
 - Android 8.0 (API 26) or newer
 - USB Host/OTG support
-- Landscape display; a tablet is strongly recommended
+- Portrait display on a phone or tablet
 - USB-C data/OTG cable or powered USB-C hub
 - LoR Core fixture power of 6–12 V through XT30
 
@@ -52,7 +52,7 @@ The synchronized binaries and APK outputs are intentionally ignored by Git. GitH
 - Guided LED, buttons A–D, and user-switch checks
 - Persistent red failure latch and green pass confirmation
 - Local CSV history using the Windows-compatible field order
-- Side-by-side history/details UI and Android document-provider CSV export
+- Stacked history list/details UI optimized for portrait use, plus Android document-provider CSV export
 
 ## Production-validation checklist
 
