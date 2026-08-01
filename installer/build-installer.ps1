@@ -14,7 +14,10 @@ $toolOutputDir = Join-Path $workDir 'tools'
 $firmwareStageDir = Join-Path $workDir 'firmware-package'
 $releaseDir = Join-Path $outputDir 'release'
 $firmwareBuildDir = Join-Path $projectDir 'build\lor_core_v3_production_test'
-$appVersion = '1.14.1'
+$versionFile = Join-Path $projectDir 'VERSION'
+if (-not (Test-Path -LiteralPath $versionFile)) { throw 'The root VERSION file is missing.' }
+$appVersion = (Get-Content -Raw -LiteralPath $versionFile).Trim()
+if ($appVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid application version: $appVersion" }
 $arduinoCli = 'C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe'
 $makeNsisCandidates = @(
     'C:\Program Files (x86)\NSIS\makensis.exe',
@@ -120,11 +123,12 @@ Write-Host 'Building desktop application...'
     --add-data "$(Join-Path $firmwareStageDir 'lor_core_v3_production_test.ino.partitions.bin');firmware" `
     --add-data "$(Join-Path $firmwareStageDir 'boot_app0.bin');firmware" `
     --add-data "$firmwareManifestPath;firmware" `
+    --add-data "$versionFile;." `
     $uiSource
 if ($LASTEXITCODE -ne 0) { throw 'Desktop application build failed.' }
 
 Write-Host 'Compiling Windows installer...'
-& $makeNsis /WX /V3 (Join-Path $installerDir 'LoR_Core_V3_Test_Station.nsi')
+& $makeNsis /WX /V3 "/DAPP_VERSION=$appVersion" (Join-Path $installerDir 'LoR_Core_V3_Test_Station.nsi')
 if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed.' }
 
 $setup = Get-ChildItem -LiteralPath $outputDir -Filter 'LoR_Core_V3_Test_Station_Setup_*.exe' |

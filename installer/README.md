@@ -46,6 +46,8 @@ From the repository root, run:
 .\installer\build-installer.ps1
 ```
 
+Set the release version once in the repository-root `VERSION` file. The builder validates and applies it to the frozen UI, NSIS metadata, installer filename, and update manifest.
+
 The script performs a clean release build:
 
 1. compiles the production firmware with the `huge_app` partition scheme;
@@ -58,7 +60,7 @@ The script performs a clean release build:
 The output is:
 
 ```text
-installer\output\LoR_Core_V3_Test_Station_Setup_1.14.1.exe
+installer\output\LoR_Core_V3_Test_Station_Setup_x.y.z.exe
 ```
 
 Ready-to-publish assets are collected in:
@@ -72,7 +74,7 @@ installer\output\release
 Create a normal, published GitHub Release in `LordofRobots/TestRig_LoR_Core_V3` and attach all three files from `installer\output\release`:
 
 ```text
-LoR_Core_V3_Test_Station_Setup_1.14.1.exe
+LoR_Core_V3_Test_Station_Setup_x.y.z.exe
 lor-core-v3-firmware-production-test-1.14.zip
 lor-core-v3-update-manifest.json
 ```

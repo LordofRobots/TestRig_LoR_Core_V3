@@ -1,0 +1,33 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source-validation:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install Python dependencies
+        run: python -m pip install -r production_test/requirements.txt
+      - name: Compile Python sources
+        run: >-
+          python -m py_compile
+          production_test/lor_core_test_station.py
+          installer/esptool_entry.py
+          installer/test_update_manager.py
+      - name: Validate application version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw VERSION).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "VERSION must use semantic versioning: $version"
+          }

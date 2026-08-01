@@ -7,7 +7,9 @@ SetCompressor /SOLID lzma
 !include "FileFunc.nsh"
 
 !define APP_NAME "LoR Core V3 Test Station"
-!define APP_VERSION "1.14.1"
+!ifndef APP_VERSION
+  !error "APP_VERSION must be supplied by build-installer.ps1"
+!endif
 !define APP_PUBLISHER "Lord of Robots"
 !define APP_EXE "LoR Core V3 Test Station.exe"
 !define APP_ID "{7C69FC40-ED8E-4A91-8B38-84FA493FEE07}"
@@ -22,7 +24,7 @@ BrandingText "Lord of Robots"
 Icon "${__FILEDIR__}\..\production_test\assets\lor-test-station.ico"
 UninstallIcon "${__FILEDIR__}\..\production_test\assets\lor-test-station.ico"
 
-VIProductVersion "1.14.1.0"
+VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "${APP_NAME}"
 VIAddVersionKey /LANG=1033 "CompanyName" "${APP_PUBLISHER}"
 VIAddVersionKey /LANG=1033 "FileDescription" "${APP_NAME} Installer"

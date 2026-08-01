@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible problem with the test station or production firmware.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve the LoR Core V3 Production Test Rig. Do not include passwords, Wi-Fi credentials, private SSIDs, manufacturing CSV files, or full board serial lists.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Windows test station
+        - ESP32 production-test firmware
+        - Installer or automatic updater
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Application and firmware versions shown by the station.
+      placeholder: "App 1.14.2 / firmware production-test-1.14"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Connect...
+        2. Select...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include relevant messages or screenshots after removing identifiers and production data.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I tested with the latest published release.
+          required: true
+        - label: I removed credentials, private network details, and manufacturing records.
+          required: true

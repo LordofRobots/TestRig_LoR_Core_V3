@@ -20,7 +20,7 @@ This production station focuses on the LoR-specific circuitry requested for end-
 
 The desktop interface uses the official animated Lord of Robots GIF and flame icon. Test setup and the high-visibility operator instruction banner are contained within **Live Test**; amber highlighting identifies steps that are waiting for operator action. Voltage and RF thresholds remain available under the collapsible **Test parameters** control. During firmware upload, the progress bar follows the main firmware image percentage reported by Espressif's uploader rather than showing an estimated timer.
 
-For continuous production use, GIF frames are decoded once during the first animation cycle and then reused from a bounded in-memory cache. Animation work is paused while the window is minimized, avoiding continuous image allocation and disk decoding during long-running sessions.
+For continuous production use, the animated GIF reuses one Tk image buffer rather than retaining every frame in memory. Animation work pauses while the window is minimized. Test History loads only when opened and holds at most the newest 2,000 records in memory while the complete CSV remains on disk.
 
 The current board firmware is `production-test-1.14`. Its startup vortex rotates continuously into a fully dark frame, then the icy-blue orb begins with a linear fade so there is no stopped frame, deliberate delay, or brightness jump between animations.
 
@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File .\production_test\launch_test_station.p
 
 The launcher installs `pyserial` if it is missing. Arduino IDE 2.x, the Espressif `esp32` board package, and FastLED must already be installed.
 
-Installed test history is written to `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results`. Source runs continue to use `production_test\results` inside the repository.
+Installed test history is written to `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results`. Source runs use the ignored `results` directory at the repository root.
 
 The installed station checks GitHub Releases once after launch. This check runs in a background thread and does not delay board detection or testing. The status in the upper-right corner identifies the application version, active firmware version, and whether firmware is bundled or downloaded. Verified downloaded firmware is cached under `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\firmware`.
 

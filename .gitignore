@@ -12,6 +12,16 @@ tmp/
 # Python caches
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+
+# Local configuration and diagnostics
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+*.bak
 
 # Production data is local and may contain manufacturing identifiers
 production_test/results/*.csv
