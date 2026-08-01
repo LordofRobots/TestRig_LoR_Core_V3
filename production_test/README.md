@@ -26,13 +26,21 @@ The current board firmware is `production-test-1.14`. Its startup vortex rotates
 
 ## Start the station
 
-Double-click `launch_test_station.ps1`, or run:
+On an installed production station, use the **LoR Core V3 Test Station** desktop or Start Menu shortcut. The installer includes the Python runtime, serial dependency, ESP32 uploader, and verified firmware, so Arduino development tools are not required on the operator PC.
+
+For source development, double-click `launch_test_station.ps1`, or run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\production_test\launch_test_station.ps1
 ```
 
 The launcher installs `pyserial` if it is missing. Arduino IDE 2.x, the Espressif `esp32` board package, and FastLED must already be installed.
+
+Installed test history is written to `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results`. Source runs continue to use `production_test\results` inside the repository.
+
+The installed station checks GitHub Releases once after launch. This check runs in a background thread and does not delay board detection or testing. The status in the upper-right corner identifies the application version, active firmware version, and whether firmware is bundled or downloaded. Verified downloaded firmware is cached under `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\firmware`.
+
+For long-running stations, the animated GIF reuses a single image buffer and pauses while minimized. Test History loads only when its tab is opened and retains at most the newest 2,000 rows in memory; the complete CSV audit file remains unchanged on disk.
 
 ## Operator workflow
 

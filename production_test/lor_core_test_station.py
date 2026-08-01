@@ -4,14 +4,20 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import queue
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
+import tempfile
+import urllib.request
+import zipfile
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 import tkinter as tk
@@ -24,13 +30,37 @@ except ImportError as exc:
     raise SystemExit("pyserial is required. Run: python -m pip install pyserial") from exc
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SKETCH = ROOT / "production_test" / "lor_core_v3_production_test"
-BUILD = ROOT / "build" / "lor_core_v3_production_test"
-CSV_FILE = ROOT / "production_test" / "results" / "lor_core_v3_results.csv"
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1] if not IS_FROZEN else RESOURCE_ROOT
+DATA_ROOT = (
+    Path(os.environ.get("PROGRAMDATA", Path.home()))
+    / "Lord of Robots"
+    / "LoR Core V3 Test Station"
+    if IS_FROZEN
+    else ROOT
+)
+SKETCH = RESOURCE_ROOT / "production_test" / "lor_core_v3_production_test"
+BUILD = DATA_ROOT / "build" / "lor_core_v3_production_test"
+CSV_FILE = DATA_ROOT / "results" / "lor_core_v3_results.csv"
+PACKAGED_FIRMWARE = RESOURCE_ROOT / "firmware"
+PACKAGED_UPLOADER = RESOURCE_ROOT / "tools" / "lor_esptool.exe"
+FIRMWARE_CACHE_ROOT = DATA_ROOT / "firmware"
+FIRMWARE_MANIFEST_NAME = "lor-core-v3-firmware-manifest.json"
+UPDATE_MANIFEST_NAME = "lor-core-v3-update-manifest.json"
+GITHUB_RELEASES_API = "https://api.github.com/repos/LordofRobots/TestRig_LoR_Core_V3/releases?per_page=10"
+APP_VERSION = "1.14.0"
+UPDATE_TIMEOUT_SECONDS = 10
+MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+FIRMWARE_FLASH_LAYOUT = {
+    "0x1000": "lor_core_v3_production_test.ino.bootloader.bin",
+    "0x8000": "lor_core_v3_production_test.ino.partitions.bin",
+    "0xe000": "boot_app0.bin",
+    "0x10000": "lor_core_v3_production_test.ino.bin",
+}
 FQBN = "esp32:esp32:esp32"
 ARDUINO_CLI_FALLBACK = Path(r"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe")
-ASSET_DIR = ROOT / "production_test" / "assets"
+ASSET_DIR = RESOURCE_ROOT / "production_test" / "assets"
 BRAND_GIF = ASSET_DIR / "lor-logo-animated.gif"
 APP_ICON = ASSET_DIR / "lor-test-station.ico"
 
@@ -44,7 +74,7 @@ BORDER = "#DDE5EF"
 SUCCESS = "#18A957"
 FAILURE = "#DF4545"
 LOGO_FRAME_DELAY_MS = 60
-MAX_LOGO_FRAMES = 500
+HISTORY_DISPLAY_LIMIT = 2000
 
 CONTROL_MAPPING_NAME = "Confirmed LoR Core V3 mapping"
 CONTROL_MAPPING = {"BTN_A": 35, "BTN_B": 39, "BTN_C": 38, "BTN_D": 37, "SW": 36}
@@ -88,6 +118,215 @@ def canonical_board_id(value: str) -> str:
     else:
         octets = [compact[index:index + 2] for index in range(0, 12, 2)]
     return ":".join(octet.upper() for octet in octets)
+
+
+def version_key(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value)) or (0,)
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest().upper()
+
+
+class UpdateManager:
+    """Maintains verified app and firmware packages from GitHub Releases."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.active_firmware_dir = PACKAGED_FIRMWARE
+        self.active_firmware = self._validate_firmware_dir(PACKAGED_FIRMWARE)
+        self.firmware_source = "bundled"
+        self._select_cached_firmware()
+
+    @staticmethod
+    def _validate_firmware_manifest(manifest: dict) -> None:
+        if manifest.get("schema") != 1 or manifest.get("product") != "LoR Core V3":
+            raise ValueError("firmware manifest identity mismatch")
+        if manifest.get("protocol") != 1:
+            raise ValueError("unsupported firmware protocol")
+        version = str(manifest.get("version", ""))
+        if not re.fullmatch(r"production-test-\d+(?:\.\d+)+", version):
+            raise ValueError("invalid firmware version")
+        files = manifest.get("files")
+        if not isinstance(files, list) or len(files) != len(FIRMWARE_FLASH_LAYOUT):
+            raise ValueError("incomplete firmware layout")
+        layout = {str(item.get("address")): str(item.get("name")) for item in files}
+        if layout != FIRMWARE_FLASH_LAYOUT:
+            raise ValueError("unapproved firmware flash layout")
+        for item in files:
+            if not re.fullmatch(r"[A-Fa-f0-9]{64}", str(item.get("sha256", ""))):
+                raise ValueError("invalid firmware image hash")
+
+    def _validate_firmware_dir(self, package_dir: Path) -> dict:
+        with (package_dir / FIRMWARE_MANIFEST_NAME).open("r", encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        self._validate_firmware_manifest(manifest)
+        for item in manifest["files"]:
+            image = package_dir / item["name"]
+            if not image.is_file() or file_sha256(image) != str(item["sha256"]).upper():
+                raise ValueError(f"firmware image validation failed: {item['name']}")
+        return manifest
+
+    def _select_cached_firmware(self) -> None:
+        if not FIRMWARE_CACHE_ROOT.exists():
+            return
+        candidates: list[tuple[tuple[int, ...], Path, dict]] = []
+        for package_dir in FIRMWARE_CACHE_ROOT.iterdir():
+            if not package_dir.is_dir() or package_dir.name.startswith("."):
+                continue
+            try:
+                manifest = self._validate_firmware_dir(package_dir)
+                candidates.append((version_key(manifest["version"]), package_dir, manifest))
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+        if not candidates:
+            return
+        _, package_dir, manifest = max(candidates, key=lambda item: item[0])
+        if version_key(manifest["version"]) >= version_key(self.active_firmware["version"]):
+            self.active_firmware_dir = package_dir
+            self.active_firmware = manifest
+            self.firmware_source = "downloaded"
+
+    def firmware_package(self) -> tuple[Path, dict, str]:
+        with self._lock:
+            return self.active_firmware_dir, dict(self.active_firmware), self.firmware_source
+
+    @staticmethod
+    def _request_json(url: str) -> dict | list:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "LoR-Core-V3-Test-Station",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=UPDATE_TIMEOUT_SECONDS) as response:
+            return json.loads(response.read(2 * 1024 * 1024).decode("utf-8"))
+
+    @staticmethod
+    def _download(url: str, destination: Path, maximum: int = MAX_DOWNLOAD_BYTES) -> None:
+        request = urllib.request.Request(url, headers={"User-Agent": "LoR-Core-V3-Test-Station"})
+        with urllib.request.urlopen(request, timeout=UPDATE_TIMEOUT_SECONDS) as response:
+            declared = int(response.headers.get("Content-Length", "0") or 0)
+            if declared > maximum:
+                raise ValueError("update download is too large")
+            total = 0
+            with destination.open("wb") as stream:
+                while True:
+                    block = response.read(1024 * 1024)
+                    if not block:
+                        break
+                    total += len(block)
+                    if total > maximum:
+                        raise ValueError("update exceeded its size limit")
+                    stream.write(block)
+
+    def _find_update_release(self) -> tuple[dict, dict[str, dict]] | None:
+        releases = self._request_json(GITHUB_RELEASES_API)
+        if not isinstance(releases, list):
+            raise ValueError("unexpected GitHub release response")
+        for release in releases:
+            if release.get("draft") or release.get("prerelease"):
+                continue
+            assets = {asset.get("name"): asset for asset in release.get("assets", [])}
+            manifest_asset = assets.get(UPDATE_MANIFEST_NAME)
+            if not manifest_asset:
+                continue
+            manifest = self._request_json(manifest_asset["browser_download_url"])
+            if not isinstance(manifest, dict):
+                continue
+            if manifest.get("schema") != 1 or manifest.get("product") != "LoR Core V3 Test Station":
+                raise ValueError("update manifest identity mismatch")
+            return manifest, assets
+        return None
+
+    def _install_firmware_update(self, manifest: dict, asset: dict) -> bool:
+        self._validate_firmware_manifest(manifest)
+        with self._lock:
+            current_version = self.active_firmware["version"]
+        if version_key(manifest["version"]) <= version_key(current_version):
+            return False
+        package_hash = str(manifest.get("package_sha256", ""))
+        if not re.fullmatch(r"[A-Fa-f0-9]{64}", package_hash):
+            raise ValueError("invalid firmware ZIP hash")
+        FIRMWARE_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+        safe_version = re.sub(r"[^A-Za-z0-9_.-]", "_", manifest["version"])
+        final_dir = FIRMWARE_CACHE_ROOT / safe_version
+        if final_dir.exists():
+            verified = self._validate_firmware_dir(final_dir)
+        else:
+            with tempfile.TemporaryDirectory(prefix=".download-", dir=FIRMWARE_CACHE_ROOT) as temporary:
+                temporary_dir = Path(temporary)
+                archive_path = temporary_dir / "firmware.zip"
+                package_dir = temporary_dir / "package"
+                package_dir.mkdir()
+                self._download(asset["browser_download_url"], archive_path, 16 * 1024 * 1024)
+                if file_sha256(archive_path) != package_hash.upper():
+                    raise ValueError("firmware ZIP hash mismatch")
+                expected = set(FIRMWARE_FLASH_LAYOUT.values())
+                with zipfile.ZipFile(archive_path) as archive:
+                    entries = [entry for entry in archive.infolist() if not entry.is_dir()]
+                    if len(entries) != len(expected) or {entry.filename for entry in entries} != expected:
+                        raise ValueError("firmware ZIP contents are incomplete")
+                    for entry in entries:
+                        name = Path(entry.filename).name
+                        if entry.filename != name or name not in expected:
+                            raise ValueError("unsafe firmware ZIP path")
+                        with archive.open(entry) as source, (package_dir / name).open("wb") as target:
+                            shutil.copyfileobj(source, target)
+                with (package_dir / FIRMWARE_MANIFEST_NAME).open("w", encoding="utf-8") as stream:
+                    json.dump(manifest, stream, indent=2)
+                verified = self._validate_firmware_dir(package_dir)
+                package_dir.replace(final_dir)
+        with self._lock:
+            self.active_firmware_dir = final_dir
+            self.active_firmware = verified
+            self.firmware_source = "downloaded"
+        return True
+
+    def check_for_updates(self) -> dict:
+        result = {"firmware_updated": False, "installer": None, "message": "Updates checked"}
+        release = self._find_update_release()
+        if release is None:
+            result["message"] = "No published update package"
+            return result
+        manifest, assets = release
+
+        firmware = manifest.get("firmware")
+        if isinstance(firmware, dict):
+            asset = assets.get(firmware.get("package_asset"))
+            if not asset:
+                raise ValueError("firmware release asset is missing")
+            result["firmware_updated"] = self._install_firmware_update(firmware, asset)
+
+        app = manifest.get("app")
+        if isinstance(app, dict) and version_key(str(app.get("version", ""))) > version_key(APP_VERSION):
+            asset = assets.get(app.get("asset"))
+            expected_hash = str(app.get("sha256", ""))
+            if not asset or not re.fullmatch(r"[A-Fa-f0-9]{64}", expected_hash):
+                raise ValueError("application update metadata is incomplete")
+            update_dir = DATA_ROOT / "updates"
+            update_dir.mkdir(parents=True, exist_ok=True)
+            installer = update_dir / Path(str(app["asset"])).name
+            if not installer.exists() or file_sha256(installer) != expected_hash.upper():
+                temporary = installer.with_suffix(".download")
+                self._download(asset["browser_download_url"], temporary)
+                if file_sha256(temporary) != expected_hash.upper():
+                    temporary.unlink(missing_ok=True)
+                    raise ValueError("application installer hash mismatch")
+                temporary.replace(installer)
+            result["installer"] = installer
+            result["app_version"] = app["version"]
+
+        package_dir, active, source = self.firmware_package()
+        del package_dir
+        result["message"] = f"Firmware {active['version']} ({source})"
+        return result
 
 
 def format_test_details(test_name: str, details: str) -> str:
@@ -211,13 +450,21 @@ class TestStation:
         self.activity_text = ""
         self.activity_percent: int | None = None
         self.logo_frame_index = 0
-        self.logo_frame_count: int | None = None
-        self.logo_frames: list[tk.PhotoImage] = []
         self.advanced_visible = False
+        self.history_loaded = False
+        self.update_manager: UpdateManager | None = UpdateManager() if IS_FROZEN else None
+        if self.update_manager:
+            _, firmware_manifest, firmware_source = self.update_manager.firmware_package()
+            update_text = f"APP {APP_VERSION}  •  FW {firmware_manifest['version'].removeprefix('production-test-')} {firmware_source.upper()}"
+        else:
+            update_text = "DEVELOPER MODE"
+        self.update_status_var = tk.StringVar(value=update_text)
         self._build_ui()
         self.root.after(100, self._drain_events)
         self.root.after(100, self._poll_ports)
         self.root.after(LOGO_FRAME_DELAY_MS, self._animate_brand_logo)
+        if self.update_manager:
+            self.root.after(1200, self._start_update_check)
 
     def _build_ui(self) -> None:
         self.root.configure(bg=APP_BACKGROUND)
@@ -275,12 +522,10 @@ class TestStation:
 
         try:
             self.logo_image = tk.PhotoImage(file=str(BRAND_GIF), format="gif -index 0")
-            self.logo_frames = [self.logo_image]
             self.logo_label = tk.Label(sidebar, image=self.logo_image, bg=BRAND_BLUE, bd=0)
             self.logo_label.pack(pady=(28, 6))
         except tk.TclError:
             self.logo_image = None
-            self.logo_frames = []
             self.logo_label = tk.Label(sidebar, text="LORD\nOF ROBOTS", bg=BRAND_BLUE, fg="white", font=("Segoe UI Semibold", 24), justify="left")
             self.logo_label.pack(anchor="w", padx=28, pady=(40, 20))
 
@@ -334,6 +579,7 @@ class TestStation:
         history_tab = tk.Frame(self.notebook, bg=SURFACE)
         self.notebook.add(live_tab, text="LIVE TEST")
         self.notebook.add(history_tab, text="TEST HISTORY")
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         settings = tk.Frame(live_tab, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=18, pady=15)
         self.settings_card = settings
@@ -354,6 +600,11 @@ class TestStation:
             relief="flat", cursor="hand2", bd=0, padx=11, pady=4,
         )
         self.auto_start_button.pack(side="right", padx=(0, 18))
+        self.update_status_label = tk.Label(
+            settings_header, textvariable=self.update_status_var, bg=SURFACE, fg=TEXT_MUTED,
+            font=("Segoe UI Semibold", 8),
+        )
+        self.update_status_label.pack(side="right", padx=(0, 16))
 
         basics = tk.Frame(settings, bg=SURFACE)
         basics.pack(fill="x")
@@ -583,7 +834,11 @@ class TestStation:
             main, text=f"Results append automatically  •  {CSV_FILE}", bg=APP_BACKGROUND,
             fg="#8A98AA", font=("Segoe UI", 8), anchor="w",
         ).pack(fill="x", pady=(9, 0))
-        self._load_history()
+        self._clear_history_details()
+
+    def _on_tab_changed(self, _event=None) -> None:
+        if self.notebook.index("current") == 1 and not self.history_loaded:
+            self._load_history()
 
     def _poll_ports(self) -> None:
         if not self.running:
@@ -630,6 +885,34 @@ class TestStation:
             self.auto_start_after_id = None
             self._update_connection_state()
 
+    def _start_update_check(self) -> None:
+        if self.update_manager is None:
+            return
+
+        def check() -> None:
+            try:
+                result = self.update_manager.check_for_updates()
+                self._emit("update_result", result)
+            except Exception as exc:
+                self._emit("update_error", str(exc))
+
+        threading.Thread(target=check, daemon=True, name="firmware-update-check").start()
+
+    def _launch_application_update(self, installer: Path, version: str) -> None:
+        if self.running:
+            self.root.after(3000, self._launch_application_update, installer, version)
+            return
+        self.update_status_var.set(f"INSTALLING APP {version}...")
+        try:
+            os.startfile(
+                str(installer),
+                "open",
+                "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+            )
+        except OSError as exc:
+            self.update_status_var.set("APP UPDATE NEEDS ATTENTION")
+            messagebox.showwarning("Application update", f"Could not start the verified update installer:\n{exc}")
+
     def _schedule_auto_start(self, port: str) -> None:
         if self.auto_start_after_id is not None:
             self.root.after_cancel(self.auto_start_after_id)
@@ -653,29 +936,15 @@ class TestStation:
         if self.root.state() == "iconic":
             self.root.after(250, self._animate_brand_logo)
             return
-
         next_index = self.logo_frame_index + 1
-        if self.logo_frame_count is not None:
-            next_index %= self.logo_frame_count
-
-        if next_index < len(self.logo_frames):
-            frame = self.logo_frames[next_index]
-        elif next_index < MAX_LOGO_FRAMES:
-            try:
-                frame = tk.PhotoImage(file=str(BRAND_GIF), format=f"gif -index {next_index}")
-                self.logo_frames.append(frame)
-            except tk.TclError:
-                self.logo_frame_count = len(self.logo_frames)
-                next_index = 0
-                frame = self.logo_frames[0]
-        else:
-            self.logo_frame_count = len(self.logo_frames)
-            next_index = 0
-            frame = self.logo_frames[0]
-
-        self.logo_frame_index = next_index
-        self.logo_image = frame
-        self.logo_label.configure(image=frame)
+        try:
+            # Reconfigure one persistent Tcl image instead of allocating and
+            # retaining a PhotoImage for every GIF frame.
+            self.logo_image.configure(file=str(BRAND_GIF), format=f"gif -index {next_index}")
+            self.logo_frame_index = next_index
+        except tk.TclError:
+            self.logo_frame_index = 0
+            self.logo_image.configure(file=str(BRAND_GIF), format="gif -index 0")
         self.root.after(LOGO_FRAME_DELAY_MS, self._animate_brand_logo)
 
     def _toggle_advanced(self) -> None:
@@ -690,19 +959,24 @@ class TestStation:
     def _load_history(self) -> None:
         if not hasattr(self, "history_tree"):
             return
+        self.history_loaded = True
         for item in self.history_tree.get_children():
             self.history_tree.delete(item)
         self.history_records.clear()
 
         search = self.history_search_var.get().strip().lower()
         result_filter = self.history_filter_var.get()
-        records: list[dict] = []
+        records: deque[dict] = deque(maxlen=HISTORY_DISPLAY_LIMIT)
+        total_records = 0
         if CSV_FILE.exists():
             try:
                 with CSV_FILE.open("r", newline="", encoding="utf-8") as stream:
-                    records = list(csv.DictReader(stream))
+                    for record in csv.DictReader(stream):
+                        records.append(record)
+                        total_records += 1
             except (OSError, csv.Error):
-                records = []
+                records.clear()
+                total_records = 0
 
         visible_count = 0
         first_iid: str | None = None
@@ -733,7 +1007,10 @@ class TestStation:
                 first_iid = iid
             self.history_records[iid] = record
             visible_count += 1
-        self.history_count_label.configure(text=f"{visible_count} record{'s' if visible_count != 1 else ''}")
+        suffix = f" of latest {len(records)} / {total_records}" if total_records > len(records) else ""
+        self.history_count_label.configure(
+            text=f"{visible_count} record{'s' if visible_count != 1 else ''}{suffix}"
+        )
         if first_iid is not None:
             self.history_tree.selection_set(first_iid)
             self.history_tree.focus(first_iid)
@@ -966,21 +1243,49 @@ class TestStation:
         })
         dut: Dut | None = None
         try:
-            cli = find_arduino_cli()
-            BUILD.mkdir(parents=True, exist_ok=True)
-            if firmware_needs_compile():
+            if IS_FROZEN:
+                if self.update_manager is None:
+                    raise RuntimeError("No verified firmware package is available")
+                firmware_dir, firmware_manifest, _ = self.update_manager.firmware_package()
+                firmware_files = {
+                    item["address"]: firmware_dir / item["name"]
+                    for item in firmware_manifest["files"]
+                }
+                missing = [str(path) for path in firmware_files.values() if not path.exists()]
+                if not PACKAGED_UPLOADER.exists():
+                    missing.append(str(PACKAGED_UPLOADER))
+                if missing:
+                    raise FileNotFoundError(
+                        "The installed firmware package is incomplete:\n" + "\n".join(missing)
+                    )
+                upload_command = [
+                    str(PACKAGED_UPLOADER), "--chip", "esp32", "--port", settings["port"],
+                    "--baud", "921600", "--before", "default-reset", "--after", "hard-reset",
+                    "write-flash", "-z", "--flash-mode", "dio", "--flash-freq", "80m",
+                    "--flash-size", "4MB",
+                ]
+                for address, firmware_path in firmware_files.items():
+                    upload_command.extend((address, str(firmware_path)))
                 self._run_tool(
-                    [cli, "compile", "--fqbn", FQBN, "--board-options", "PartitionScheme=huge_app",
-                     str(SKETCH), "--build-path", str(BUILD)],
-                    "Compiling specialized test firmware (first run may take several minutes)...", 420,
+                    upload_command,
+                    "Uploading verified production firmware...", 120, track_progress=True,
                 )
             else:
-                self._emit("phase", "Using the verified cached test firmware...")
-            self._run_tool(
-                [cli, "upload", "--fqbn", FQBN, "--board-options", "PartitionScheme=huge_app",
-                 "--port", settings["port"], str(SKETCH), "--build-path", str(BUILD)],
-                "Uploading test firmware to the detected board...", 120, track_progress=True,
-            )
+                cli = find_arduino_cli()
+                BUILD.mkdir(parents=True, exist_ok=True)
+                if firmware_needs_compile():
+                    self._run_tool(
+                        [cli, "compile", "--fqbn", FQBN, "--board-options", "PartitionScheme=huge_app",
+                         str(SKETCH), "--build-path", str(BUILD)],
+                        "Compiling specialized test firmware (first run may take several minutes)...", 420,
+                    )
+                else:
+                    self._emit("phase", "Using the verified cached test firmware...")
+                self._run_tool(
+                    [cli, "upload", "--fqbn", FQBN, "--board-options", "PartitionScheme=huge_app",
+                     "--port", settings["port"], str(SKETCH), "--build-path", str(BUILD)],
+                    "Uploading test firmware to the detected board...", 120, track_progress=True,
+                )
             self._emit("phase", "Connecting to LoR Core test firmware...")
             dut = Dut(settings["port"])
 
@@ -1168,6 +1473,20 @@ class TestStation:
                     self._set_activity_progress(event[1])
                 elif kind == "activity_stop":
                     self._hide_activity()
+                elif kind == "update_result":
+                    result = event[1]
+                    if self.update_manager:
+                        _, firmware, source = self.update_manager.firmware_package()
+                        self.update_status_var.set(
+                            f"APP {APP_VERSION}  â€¢  FW {firmware['version'].removeprefix('production-test-')} {source.upper()}"
+                        )
+                    installer = result.get("installer")
+                    if installer:
+                        self._launch_application_update(Path(installer), str(result.get("app_version", "")))
+                elif kind == "update_error":
+                    # Updates are optional; retain the verified local package
+                    # without interrupting the production operator.
+                    self.update_status_label.configure(fg="#A56B00")
                 elif kind == "row":
                     row = event[1]
                     passed = row["pass"]

@@ -1,6 +1,10 @@
 # Arduino build output
 build/
 
+# Windows installer build output
+installer/output/
+installer/work/
+
 # Local runtime and scratch directories
 .tmp-runtime/
 tmp/
@@ -11,6 +15,7 @@ __pycache__/
 
 # Production data is local and may contain manufacturing identifiers
 production_test/results/*.csv
+results/*.csv
 
 # Machine-specific Windows shortcuts
 *.lnk

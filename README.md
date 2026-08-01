@@ -18,7 +18,38 @@ Current test firmware: `production-test-1.14` (serial protocol version 1).
 
 Every attempted test is appended to a local CSV audit file. The Test History workspace provides searchable run history, measurement cards, and individual check details.
 
-## Requirements
+## Install on a production PC
+
+The recommended deployment is the Windows installer:
+
+```text
+LoR_Core_V3_Test_Station_Setup_1.14.0.exe
+```
+
+Run the setup program as an administrator. It installs the application for all users, creates Lord of Robots Start Menu and desktop shortcuts, and registers an uninstaller in Windows **Installed apps**. The packaged application includes Python, pyserial, esptool, the branded assets, and the verified `production-test-1.14` firmware image. A production PC does not need Python, Arduino IDE, the ESP32 board package, or FastLED.
+
+Windows must recognize the board's WCH CH340/CH341 USB-serial interface. Install the WCH driver if connecting a board does not create a COM port.
+
+Installed production data is stored outside Program Files so application upgrades do not replace test history:
+
+```text
+C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results\lor_core_v3_results.csv
+```
+
+Uninstalling the application leaves this production data in place intentionally.
+
+## Automatic updates
+
+The installed application performs one lightweight, non-blocking update check against the public GitHub Releases API shortly after startup. It does not require a GitHub login or keep a background updater running.
+
+- A newer verified firmware package is downloaded once, cached under ProgramData, and used for subsequent board uploads.
+- A newer application installer is downloaded only when its version is newer, verified, and launched silently. Windows may show an administrator/UAC prompt because the application is installed for all users.
+- Every installer and firmware package must match its published SHA-256 value. Firmware packages also have per-image hashes and an exact approved ESP32 flash layout.
+- If GitHub is offline, a download is incomplete, or verification fails, testing continues with the current application and the newest previously verified firmware.
+
+Updates are published as GitHub Release assets, not committed binaries. See [installer/README.md](installer/README.md) for the release procedure and asset names.
+
+## Source-development requirements
 
 - Windows 10 or 11
 - Python 3
@@ -29,7 +60,7 @@ Every attempted test is appended to a local CSV audit file. The Test History wor
 
 The launcher installs the Python `pyserial` dependency automatically when needed.
 
-## Start the station
+## Run from source
 
 Run:
 
@@ -86,7 +117,10 @@ docs/
 
 Generated builds, Python caches, machine-specific shortcuts, and production CSV data are intentionally excluded from version control.
 
+The generated installer and its intermediate frozen application are also excluded. See [installer/README.md](installer/README.md) for the repeatable release build.
+
 ## Additional documentation
 
 - [Operator and configuration guide](production_test/README.md)
 - [Serial command protocol](docs/SERIAL_PROTOCOL.md)
+- [Windows installer build and deployment guide](installer/README.md)
