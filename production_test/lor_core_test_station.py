@@ -43,6 +43,8 @@ TEXT_MUTED = "#66758A"
 BORDER = "#DDE5EF"
 SUCCESS = "#18A957"
 FAILURE = "#DF4545"
+LOGO_FRAME_DELAY_MS = 60
+MAX_LOGO_FRAMES = 500
 
 CONTROL_MAPPING_NAME = "Confirmed LoR Core V3 mapping"
 CONTROL_MAPPING = {"BTN_A": 35, "BTN_B": 39, "BTN_C": 38, "BTN_D": 37, "SW": 36}
@@ -201,15 +203,21 @@ class TestStation:
         self.led_event = threading.Event()
         self.port_descriptions: dict[str, str] = {}
         self.last_ports: tuple[str, ...] = ()
+        self.port_poll_initialized = False
+        self.auto_start_armed = True
+        self.auto_start_after_id: str | None = None
+        self.auto_start_latched_port = ""
         self.activity_token = 0
         self.activity_text = ""
         self.activity_percent: int | None = None
         self.logo_frame_index = 0
+        self.logo_frame_count: int | None = None
+        self.logo_frames: list[tk.PhotoImage] = []
         self.advanced_visible = False
         self._build_ui()
         self.root.after(100, self._drain_events)
         self.root.after(100, self._poll_ports)
-        self.root.after(45, self._animate_brand_logo)
+        self.root.after(LOGO_FRAME_DELAY_MS, self._animate_brand_logo)
 
     def _build_ui(self) -> None:
         self.root.configure(bg=APP_BACKGROUND)
@@ -256,6 +264,7 @@ class TestStation:
         self.tolerance_var = tk.StringVar(value="3.0")
         self.ssid_var = tk.StringVar()
         self.rssi_var = tk.StringVar(value="-85")
+        self.auto_start_var = tk.BooleanVar(value=True)
 
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(1, weight=1)
@@ -266,10 +275,12 @@ class TestStation:
 
         try:
             self.logo_image = tk.PhotoImage(file=str(BRAND_GIF), format="gif -index 0")
+            self.logo_frames = [self.logo_image]
             self.logo_label = tk.Label(sidebar, image=self.logo_image, bg=BRAND_BLUE, bd=0)
             self.logo_label.pack(pady=(28, 6))
         except tk.TclError:
             self.logo_image = None
+            self.logo_frames = []
             self.logo_label = tk.Label(sidebar, text="LORD\nOF ROBOTS", bg=BRAND_BLUE, fg="white", font=("Segoe UI Semibold", 24), justify="left")
             self.logo_label.pack(anchor="w", padx=28, pady=(40, 20))
 
@@ -336,6 +347,13 @@ class TestStation:
             font=("Segoe UI Semibold", 9), relief="flat", bd=0, cursor="hand2",
         )
         self.advanced_button.pack(side="right")
+        self.auto_start_button = tk.Button(
+            settings_header, text="AUTO-START: ON", command=self._toggle_auto_start,
+            bg="#DCF6E7", activebackground="#C9EFD9", fg="#0B7438",
+            activeforeground="#0B7438", font=("Segoe UI Semibold", 9),
+            relief="flat", cursor="hand2", bd=0, padx=11, pady=4,
+        )
+        self.auto_start_button.pack(side="right", padx=(0, 18))
 
         basics = tk.Frame(settings, bg=SURFACE)
         basics.pack(fill="x")
@@ -573,6 +591,7 @@ class TestStation:
             ports = tuple(port for port, _ in candidates)
             self.port_descriptions = dict(candidates)
             if ports != self.last_ports:
+                previous_ports = self.last_ports
                 self.last_ports = ports
                 self.port_combo["values"] = ports
                 if ports and self.port_var.get() not in ports:
@@ -580,19 +599,84 @@ class TestStation:
                 if not ports:
                     self.port_var.set("")
                 self._update_connection_state()
+                if self.auto_start_latched_port and self.auto_start_latched_port not in ports:
+                    self.auto_start_latched_port = ""
+                    self.auto_start_armed = True
+                if self.port_poll_initialized and self.auto_start_var.get() and self.auto_start_armed:
+                    new_ports = [port for port in ports if port not in previous_ports]
+                    lor_ports = [port for port in new_ports if self._is_lor_usb_port(port)]
+                    if lor_ports:
+                        self._schedule_auto_start(lor_ports[0])
+            if not self.port_poll_initialized:
+                self.port_poll_initialized = True
         self.root.after(1000, self._poll_ports)
+
+    def _is_lor_usb_port(self, port: str) -> bool:
+        description = self.port_descriptions.get(port, "").lower()
+        return any(marker in description for marker in ("ch340", "ch341", "wch"))
+
+    def _toggle_auto_start(self) -> None:
+        self.auto_start_var.set(not self.auto_start_var.get())
+        enabled = self.auto_start_var.get()
+        self.auto_start_button.configure(
+            text="AUTO-START: ON" if enabled else "AUTO-START: OFF",
+            bg="#DCF6E7" if enabled else "#E8EDF4",
+            activebackground="#C9EFD9" if enabled else "#DCE3EC",
+            fg="#0B7438" if enabled else TEXT_MUTED,
+            activeforeground="#0B7438" if enabled else TEXT_MUTED,
+        )
+        if not self.auto_start_var.get() and self.auto_start_after_id is not None:
+            self.root.after_cancel(self.auto_start_after_id)
+            self.auto_start_after_id = None
+            self._update_connection_state()
+
+    def _schedule_auto_start(self, port: str) -> None:
+        if self.auto_start_after_id is not None:
+            self.root.after_cancel(self.auto_start_after_id)
+        self.auto_start_armed = False
+        self.auto_start_latched_port = port
+        self.port_var.set(port)
+        self._update_connection_state()
+        self._set_instruction(f"New LoR Core detected on {port}. Automatic test starts in 2 seconds...")
+        self.auto_start_after_id = self.root.after(2000, lambda: self._run_auto_start(port))
+
+    def _run_auto_start(self, port: str) -> None:
+        self.auto_start_after_id = None
+        if self.running or not self.auto_start_var.get() or port not in self.last_ports:
+            return
+        self.port_var.set(port)
+        self._start_test()
 
     def _animate_brand_logo(self) -> None:
         if self.logo_image is None or not BRAND_GIF.exists():
             return
-        try:
-            self.logo_frame_index = (self.logo_frame_index + 1) % 213
-            frame = tk.PhotoImage(file=str(BRAND_GIF), format=f"gif -index {self.logo_frame_index}")
-            self.logo_image = frame
-            self.logo_label.configure(image=frame)
-        except tk.TclError:
-            self.logo_frame_index = 0
-        self.root.after(45, self._animate_brand_logo)
+        if self.root.state() == "iconic":
+            self.root.after(250, self._animate_brand_logo)
+            return
+
+        next_index = self.logo_frame_index + 1
+        if self.logo_frame_count is not None:
+            next_index %= self.logo_frame_count
+
+        if next_index < len(self.logo_frames):
+            frame = self.logo_frames[next_index]
+        elif next_index < MAX_LOGO_FRAMES:
+            try:
+                frame = tk.PhotoImage(file=str(BRAND_GIF), format=f"gif -index {next_index}")
+                self.logo_frames.append(frame)
+            except tk.TclError:
+                self.logo_frame_count = len(self.logo_frames)
+                next_index = 0
+                frame = self.logo_frames[0]
+        else:
+            self.logo_frame_count = len(self.logo_frames)
+            next_index = 0
+            frame = self.logo_frames[0]
+
+        self.logo_frame_index = next_index
+        self.logo_image = frame
+        self.logo_label.configure(image=frame)
+        self.root.after(LOGO_FRAME_DELAY_MS, self._animate_brand_logo)
 
     def _toggle_advanced(self) -> None:
         self.advanced_visible = not self.advanced_visible
@@ -783,6 +867,12 @@ class TestStation:
             self._set_instruction("Connect a LoR Core over USB-C to begin.")
 
     def _start_test(self) -> None:
+        if self.auto_start_after_id is not None:
+            self.root.after_cancel(self.auto_start_after_id)
+            self.auto_start_after_id = None
+        self.auto_start_armed = False
+        if self.port_var.get():
+            self.auto_start_latched_port = self.port_var.get()
         try:
             settings = {
                 "port": self.port_var.get(),
@@ -934,7 +1024,7 @@ class TestStation:
             self.led_event.clear()
             self._emit(
                 "phase",
-                "CHECK THE FOUR LEDS — confirm the rainbow wash and icy-blue comet animation.",
+                "CHECK THE FOUR LEDS — confirm the rainbow vortex startup and smooth icy-blue spatial orb.",
                 True,
             )
             self._emit("led_prompt")
@@ -984,7 +1074,7 @@ class TestStation:
             overall = all(record.get(field) is True for field in pass_fields)
             record["overall_pass"] = overall
             if overall:
-                self._emit("phase", "PASS - showing green for two seconds, then returning to icy-blue breathing.")
+                self._emit("phase", "PASS - showing green for two seconds, then returning to the icy-blue spatial orb.")
                 dut.command("TEST_PASS", lambda m: m.get("test") == "TEST_PASS", 6)
             else:
                 self._emit("phase", "FAIL - locking the board LEDs red.")

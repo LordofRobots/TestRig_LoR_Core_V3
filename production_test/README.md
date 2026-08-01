@@ -10,15 +10,19 @@ This production station focuses on the LoR-specific circuitry requested for end-
 - active Bluetooth Low Energy scan with device count and strongest observed RSSI;
 - automatic guided detection of all four buttons and the user switch;
 - live button LED feedback: A yellow, B green, C red, and D blue while held;
-- a one-second rainbow LED wash on every power-up, followed by either the persistent red-failure state or the normal icy-blue animation;
-- an exaggerated icy-blue breathing trail with exactly three LEDs illuminated at a time, with operator confirmation;
+- a brief spatial rainbow-vortex animation on every power-up, emerging from black, blooming across the four corners, and returning to black before the persistent red-failure state or normal icy-blue animation fades in;
+- a smooth icy-blue breathing orb that circles the physical 46 mm square LED layout, with operator confirmation;
 - a clear overall PASS/FAIL result;
-- a pass indication (solid green for two seconds, then the icy-blue breathing baseline);
+- a pass indication (solid green for two seconds, then a smooth transition to the icy-blue spatial-orb baseline);
 - a fail-safe persistent failure indication (solid red, restored after reset or power cycling);
 - one append-only row per test attempt in `results/lor_core_v3_results.csv`;
 - a searchable **Test History** workspace with a run table on the left and structured board details, measurement cards, and per-check results on the right.
 
 The desktop interface uses the official animated Lord of Robots GIF and flame icon. Test setup and the high-visibility operator instruction banner are contained within **Live Test**; amber highlighting identifies steps that are waiting for operator action. Voltage and RF thresholds remain available under the collapsible **Test parameters** control. During firmware upload, the progress bar follows the main firmware image percentage reported by Espressif's uploader rather than showing an estimated timer.
+
+For continuous production use, GIF frames are decoded once during the first animation cycle and then reused from a bounded in-memory cache. Animation work is paused while the window is minimized, avoiding continuous image allocation and disk decoding during long-running sessions.
+
+The current board firmware is `production-test-1.14`. Its startup vortex rotates continuously into a fully dark frame, then the icy-blue orb begins with a linear fade so there is no stopped frame, deliberate delay, or brightness jump between animations.
 
 ## Start the station
 
@@ -34,14 +38,19 @@ The launcher installs `pyserial` if it is missing. Arduino IDE 2.x, the Espressi
 
 1. Power the LoR Core through XT30 with a supply between 6.0 V and 12.0 V, then connect USB-C.
 2. Wait for the candidate COM port to appear and the large green **RUN TEST** button to enable.
-3. Optionally enter a printed serial number and operator initials. The ESP32 eFuse MAC is always recorded as `board_id`.
-4. Click **RUN TEST**. The station compiles and uploads the dedicated firmware automatically. Subsequent boards reuse the verified binary unless the sketch changes, so they go directly to upload.
-5. Watch the four LEDs. They should show a fast rainbow for one second and then an icy-blue three-LED breathing trail. Click **LEDs OK** or **LED FAIL**.
-6. Follow the large prompt to press and hold buttons A, B, C, and D, then toggle the switch. While held, A lights the LEDs yellow, B green, C red, and D blue. Releasing the button restores the icy-blue breathing animation. No keyboard confirmation is needed; the board detects each transition.
-7. Read the large PASS/FAIL result. The CSV row is appended even for test failures and, where possible, station errors.
-8. Open **Test History** to search previous boards, filter PASS/FAIL records, and inspect the complete details for any selected test.
+3. Choose **AUTO-START: ON** for automatic testing after each newly connected LoR Core, or **AUTO-START: OFF** for manual starts. Automatic mode waits two seconds for USB to settle, triggers each physical connection once, and re-arms only after unplugging the board.
+4. Optionally enter a printed serial number and operator initials. The ESP32 eFuse MAC is always recorded as `board_id`.
+5. With automatic mode off, click **RUN TEST**. The station compiles and uploads the dedicated firmware automatically. Subsequent boards reuse the verified binary unless the sketch changes, so they go directly to upload.
+6. Watch the four LEDs. They should show a smooth rainbow vortex that emerges from black, blooms across the board, and returns to black, followed by an icy-blue spatial orb circling the board. Click **LEDs OK** or **LED FAIL**.
+7. Follow the large prompt to press and hold buttons A, B, C, and D, then toggle the switch. While held, A lights the LEDs yellow, B green, C red, and D blue. Releasing the button restores the icy-blue spatial orb. No keyboard confirmation is needed; the board detects each transition.
+8. Read the large PASS/FAIL result. The CSV row is appended even for test failures and, where possible, station errors.
+9. Open **Test History** to search previous boards, filter PASS/FAIL records, and inspect the complete details for any selected test.
 
-At `TEST_START`, the firmware writes a provisional failed state to ESP32 NVS. Only a fully completed pass clears it. This means a failed test, station interruption, reset, or power loss cannot accidentally leave the board showing a normal baseline. On every boot the one-second rainbow runs first; the firmware then reads the stored state and selects locked red or the normal icy-blue trail. Start a new test from the UI to retest a red-latched board; a successful result clears the latch.
+At `TEST_START`, the firmware writes a provisional failed state to ESP32 NVS. Only a fully completed pass clears it. This means a failed test, station interruption, reset, or power loss cannot accidentally leave the board showing a normal baseline. On every boot the spatial rainbow startup runs first; the firmware then selects locked red or the normal icy-blue spatial orb. Start a new test from the UI to retest a red-latched board; a successful result clears the latch.
+
+## Firmware test scheduling
+
+Power-up does not run VIN, Wi-Fi, Bluetooth, or control tests. The firmware only restores its persistent state, plays the startup LEDs, reports identity metadata, maintains the baseline animation, provides button color feedback, and waits for the station. Measurement and RF checks run only when the UI sends `VIN`, `WIFI`, `BT`, or `INPUTS`. Button feedback remains available during normal operation but is disabled while failure red is locked.
 
 ## Configuration
 

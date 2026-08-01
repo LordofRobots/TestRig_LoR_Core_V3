@@ -2,6 +2,8 @@
 
 End-of-line production test software for the Lord of Robots LoR Core V3 robotics controller. The project combines a branded Windows test-station UI with dedicated ESP32 firmware for guided, repeatable board verification.
 
+Current test firmware: `production-test-1.14` (serial protocol version 1).
+
 ![Lord of Robots](production_test/assets/lor-logo-white.png)
 
 ## What it tests
@@ -37,17 +39,21 @@ powershell -ExecutionPolicy Bypass -File .\production_test\launch_test_station.p
 
 Connect one LoR Core by USB-C. When the board is detected, select **RUN PRODUCTION TEST** and follow the highlighted operator instructions.
 
+The **AUTO-START** toggle is enabled by default for production throughput. When enabled, a newly plugged CH340/WCH LoR Core starts testing after a two-second USB-settle delay. Each connection triggers only once and is re-armed only after the board is unplugged. Set the toggle to **OFF** whenever manual starts are preferred.
+
 The first run compiles the test firmware. Later runs reuse the cached build until the firmware source changes. Firmware upload progress follows the percentage reported by Espressif's uploader.
 
 ## Test behavior
 
-On every boot, the LEDs show a one-second rainbow wash. The firmware then reads the stored result state:
+On every boot, the LEDs show a brief spatial rainbow vortex across their physical 46 mm square layout. It emerges from black, rotates and blooms across all four corners, then returns to black before the firmware fades into the stored result state:
 
-- Passed or untested: icy-blue rotating comet animation
+- Passed or untested: smooth icy-blue spatial orb circling the square
 - Failed or interrupted test: solid red, retained across power cycles
-- Successful completed test: solid green for two seconds, then the icy-blue comet
+- Successful completed test: solid green for two seconds, then a smooth transition to the icy-blue spatial orb
 
 While checking the buttons, the LEDs show yellow for A, green for B, red for C, and blue for D.
+
+The board does not run production measurements or RF scans automatically. VIN, Wi-Fi, BLE, and input snapshots execute only when requested by the UI. Idle firmware work is limited to LED animation, button color feedback, and serial command polling.
 
 ## Hardware mapping
 

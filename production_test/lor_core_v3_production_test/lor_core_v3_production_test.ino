@@ -7,6 +7,7 @@
 #include <FastLED.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <math.h>
 
 namespace LorV3 {
 
@@ -15,6 +16,11 @@ constexpr uint8_t LED_PIN = 33;
 constexpr uint8_t LED_COUNT = 4;
 constexpr uint8_t VIN_SENSE = 34;
 constexpr uint8_t INPUT_PINS[] = {35, 36, 37, 38, 39};
+constexpr float LED_X_MM[] = {0.0f, 0.0f, 46.0f, 46.0f};
+constexpr float LED_Y_MM[] = {0.0f, 46.0f, 46.0f, 0.0f};
+constexpr float LED_FIELD_CENTER_MM = 23.0f;
+constexpr float PI_F = 3.14159265359f;
+constexpr float TWO_PI_F = 6.28318530718f;
 constexpr float VIN_SLOPE = 0.0063492f;
 // Calibrated at an 8.000 V reference on the production fixture. The previous
 // 1.079 V offset reported 8.382 V, so the observed +0.382 V error is removed.
@@ -27,6 +33,7 @@ bool failureLocked = false;
 bool testActive = false;
 int8_t activeButtonColor = -1;
 uint32_t lastLedFrameMs = 0;
+uint32_t orbEpochMs = 0;
 
 void jsonString(const String &value) {
   Serial.print('"');
@@ -54,7 +61,7 @@ void printInfo() {
   snprintf(macText, sizeof(macText), "%02X:%02X:%02X:%02X:%02X:%02X",
            uint8_t(mac), uint8_t(mac >> 8), uint8_t(mac >> 16),
            uint8_t(mac >> 24), uint8_t(mac >> 32), uint8_t(mac >> 40));
-  Serial.print(F("{\"type\":\"info\",\"product\":\"LoR Core V3\",\"firmware\":\"production-test-1.8\",\"chip\":"));
+  Serial.print(F("{\"type\":\"info\",\"product\":\"LoR Core V3\",\"firmware\":\"production-test-1.14\",\"chip\":"));
   jsonString(ESP.getChipModel());
   Serial.print(F(",\"revision\":"));
   Serial.print(ESP.getChipRevision());
@@ -162,16 +169,118 @@ void testBluetooth() {
          String("devices=") + count + ",best_rssi_dbm=" + bestRssi + ",best_device=" + bestName);
 }
 
-void playRainbowWash() {
+float smoothStep(float value) {
+  value = constrain(value, 0.0f, 1.0f);
+  return value * value * (3.0f - (2.0f * value));
+}
+
+void renderSpatialOrb(uint32_t now, CRGB output[]) {
+  const uint32_t elapsed = now - orbEpochMs;
+  const float orbitPhase = (elapsed % 3600) * (TWO_PI_F / 3600.0f);
+  const float breathPhase = (elapsed % 5200) * (TWO_PI_F / 5200.0f);
+  const float centerX = LED_FIELD_CENTER_MM + (cosf(orbitPhase) * 16.5f);
+  const float centerY = LED_FIELD_CENTER_MM + (sinf(orbitPhase) * 16.5f);
+  const float breath = 0.78f + (0.22f * ((sinf(breathPhase) + 1.0f) * 0.5f));
+
+  for (uint8_t led = 0; led < LED_COUNT; ++led) {
+    const float dx = LED_X_MM[led] - centerX;
+    const float dy = LED_Y_MM[led] - centerY;
+    const float distance = sqrtf((dx * dx) + (dy * dy));
+    const float glow = smoothStep(1.0f - (distance / 49.0f));
+    if (glow <= 0.002f) {
+      output[led] = CRGB::Black;
+      continue;
+    }
+    const uint8_t colorMix = uint8_t(glow * 255.0f);
+    const uint8_t level = uint8_t(glow * breath * 255.0f);
+    output[led] = blend(CRGB(5, 65, 235), CRGB(175, 240, 255), colorMix);
+    output[led].nscale8_video(level);
+  }
+}
+
+void playSpatialRainbowStartup() {
   breathing = false;
   const uint32_t started = millis();
-  while (millis() - started < 1000) {
-    const uint8_t hue = uint8_t((millis() - started) / 4);
-    fill_rainbow(leds, LED_COUNT, hue, 40);
+  constexpr uint32_t DURATION_MS = 2300;
+  // Begin at LED 1 (top-left), rotate 1.5 times, and finish at LED 3
+  // (bottom-right). The global envelope guarantees black at both ends.
+  constexpr float START_ANGLE = -2.35619449f;
+  constexpr float ROTATIONS = 1.5f;
+
+  while (millis() - started < DURATION_MS) {
+    const uint32_t elapsed = millis() - started;
+    const float progress = constrain(elapsed / float(DURATION_MS), 0.0f, 1.0f);
+    // Keep rotating at a constant rate until the light is fully gone. Easing
+    // position here makes the vortex appear to stop before it reaches black.
+    const float travel = progress;
+    const float pulse = sinf(PI_F * progress);
+    const float envelope = pulse * pulse;
+    const float bloom = envelope * envelope;
+    const float focusAngle = START_ANGLE + (travel * TWO_PI_F * ROTATIONS);
+
+    for (uint8_t led = 0; led < LED_COUNT; ++led) {
+      const float dx = LED_X_MM[led] - LED_FIELD_CENTER_MM;
+      const float dy = LED_Y_MM[led] - LED_FIELD_CENTER_MM;
+      const float ledAngle = atan2f(dy, dx);
+
+      // A continuously rotating focal glow provides motion. At the midpoint,
+      // bloom raises every corner so the complete rainbow wheel is visible.
+      const float directional = 0.5f + (0.5f * cosf(ledAngle - focusAngle));
+      const float focus = directional * directional * directional;
+      const float ambient = 0.07f + (0.55f * bloom);
+      const float intensity = envelope * (ambient + ((1.0f - ambient) * focus));
+
+      float angularHue = (ledAngle + PI_F) / TWO_PI_F;
+      if (angularHue < 0.0f) angularHue += 1.0f;
+      const uint8_t hue = uint8_t((angularHue * 255.0f) + (travel * 300.0f));
+      leds[led] = CHSV(hue, 245, uint8_t(intensity * 255.0f));
+    }
     FastLED.show();
-    delay(15);
+    delay(16);
   }
-  FastLED.clear(true);
+  fill_solid(leds, LED_COUNT, CRGB::Black);
+  FastLED.show();
+}
+
+void transitionFromCurrent(bool toFailure) {
+  CRGB startingColors[LED_COUNT];
+  CRGB targetColors[LED_COUNT];
+  for (uint8_t led = 0; led < LED_COUNT; ++led) startingColors[led] = leds[led];
+
+  breathing = false;
+  constexpr uint32_t DURATION_MS = 700;
+  const uint32_t started = millis();
+  if (!toFailure) orbEpochMs = started;
+  while (millis() - started < DURATION_MS) {
+    const uint32_t now = millis();
+    const float progress = constrain(
+        (now - started) / float(DURATION_MS), 0.0f, 1.0f);
+    // A linear entrance starts changing on the first frame without the initial
+    // pause of smoothstep or the brightness jump of an ease-out curve.
+    const float easedProgress = toFailure
+                                    ? smoothStep(progress)
+                                    : progress;
+    const uint8_t mixAmount = uint8_t(easedProgress * 255.0f);
+    if (toFailure) {
+      fill_solid(targetColors, LED_COUNT, CRGB(255, 0, 0));
+    } else {
+      renderSpatialOrb(now, targetColors);
+    }
+    for (uint8_t led = 0; led < LED_COUNT; ++led) {
+      leds[led] = blend(startingColors[led], targetColors[led], mixAmount);
+    }
+    FastLED.show();
+    delay(16);
+  }
+
+  failureLocked = toFailure;
+  breathing = !toFailure;
+  if (toFailure) {
+    fill_solid(leds, LED_COUNT, CRGB(255, 0, 0));
+  } else {
+    renderSpatialOrb(millis(), leds);
+  }
+  FastLED.show();
 }
 
 void startLedDemo() {
@@ -179,9 +288,9 @@ void startLedDemo() {
     result("LED_DEMO", false, "TEST_START is required before LED_DEMO");
     return;
   }
-  playRainbowWash();
-  breathing = true;
-  result("LED_DEMO", true, "one-second rainbow complete; icy-blue breathing active");
+  playSpatialRainbowStartup();
+  transitionFromCurrent(false);
+  result("LED_DEMO", true, "spatial rainbow startup complete; icy-blue orb active");
 }
 
 void showLockedFailure() {
@@ -193,9 +302,8 @@ void showLockedFailure() {
 void startProductionTest() {
   // Fail-safe: a reset or power loss during a test must reboot to locked red.
   preferences.putBool("failed", true);
-  failureLocked = false;
   testActive = true;
-  breathing = true;
+  transitionFromCurrent(false);
   result("TEST_START", true, "failure state pre-latched until a complete pass");
 }
 
@@ -208,12 +316,11 @@ void finishProductionTest(bool passed) {
     fill_solid(leds, LED_COUNT, CRGB(0, 255, 0));
     FastLED.show();
     delay(2000);
-    breathing = true;
-    result("TEST_PASS", true, "solid green shown for two seconds; baseline animation restored");
+    transitionFromCurrent(false);
+    result("TEST_PASS", true, "solid green shown for two seconds; spatial orb restored");
   } else {
     preferences.putBool("failed", true);
-    failureLocked = true;
-    showLockedFailure();
+    transitionFromCurrent(true);
     result("TEST_FAIL", true, "failure latched; LEDs remain red across power cycles");
   }
 }
@@ -221,40 +328,12 @@ void finishProductionTest(bool passed) {
 void updateBreathingLeds() {
   if (failureLocked || !breathing || millis() - lastLedFrameMs < 16) return;
   lastLedFrameMs = millis();
-  const uint32_t now = millis();
-  // An asymmetric 270-degree envelope creates a bright comet head followed
-  // by a long fading tail. The remaining quarter of the ring stays dark.
-  const uint8_t rotationPhase = uint8_t(now / 12);
-  const uint8_t breath = scale8(sin8(uint8_t(now / 20)), 75) + 180;
-  constexpr uint8_t HEAD_LENGTH = 36;
-  constexpr uint8_t COMET_LENGTH = 192;
-
-  fill_solid(leds, LED_COUNT, CRGB::Black);
-  for (uint8_t led = 0; led < LED_COUNT; ++led) {
-    const uint8_t ledPhase = led * (256 / LED_COUNT);
-    const uint8_t positionInComet = rotationPhase - ledPhase;
-    if (positionInComet >= COMET_LENGTH) continue;
-
-    uint8_t cometLevel;
-    if (positionInComet < HEAD_LENGTH) {
-      const uint8_t headProgress = uint8_t((uint16_t(positionInComet) * 255) / HEAD_LENGTH);
-      cometLevel = ease8InOutQuad(headProgress);
-    } else {
-      const uint8_t tailProgress = uint8_t(
-          (uint16_t(positionInComet - HEAD_LENGTH) * 255) /
-          (COMET_LENGTH - HEAD_LENGTH));
-      cometLevel = 255 - ease8InOutQuad(tailProgress);
-    }
-
-    const uint8_t level = scale8(cometLevel, breath);
-    const CRGB cometColor = blend(CRGB(8, 75, 255), CRGB(155, 235, 255), cometLevel);
-    leds[led] = cometColor;
-    leds[led].nscale8_video(level);
-  }
+  renderSpatialOrb(millis(), leds);
   FastLED.show();
 }
 
 bool updateButtonLedOverride() {
+  // Button color feedback is always available during the normal animation.
   if (failureLocked || !breathing) return false;
 
   int8_t pressed = -1;
@@ -350,15 +429,9 @@ void setup() {
   FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_COUNT);
   FastLED.setBrightness(255);
   preferences.begin("lor-test", false);
-  playRainbowWash();
   failureLocked = preferences.getBool("failed", false);
-  if (failureLocked) {
-    showLockedFailure();
-  } else {
-    breathing = true;
-    updateBreathingLeds();
-  }
-  delay(600);
+  playSpatialRainbowStartup();
+  transitionFromCurrent(failureLocked);
   Serial.println(F("{\"type\":\"ready\",\"product\":\"LoR Core V3\",\"protocol\":1}"));
   printInfo();
 }
