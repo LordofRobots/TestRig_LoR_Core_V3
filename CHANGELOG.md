@@ -2,6 +2,15 @@
 
 All notable production changes are recorded here. Application versions follow semantic versioning; board firmware uses the `production-test-x.y` scheme.
 
+## Unreleased
+
+### Added
+
+- Native Android 0.1.0 engineering client for USB-host LoR Core testing
+- CH340 detection, native ESP32 ROM flashing, guided checks, CSV history, and export
+- Hash-verified synchronization from the common GitHub Release firmware package
+- Android emulator build, install, launch, and responsive-layout validation
+
 ## [1.14.2] - 2026-08-01
 
 ### Added

@@ -31,3 +31,13 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "VERSION must use semantic versioning: $version"
           }
+      - name: Synchronize shared Android firmware
+        shell: pwsh
+        run: .\android\sync-firmware.ps1 -ForceDownload
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Build Android engineering APK
+        working-directory: android
+        run: .\gradlew.bat assembleDebug

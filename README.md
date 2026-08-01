@@ -13,6 +13,8 @@
 
 A production-ready Windows test station and dedicated ESP32 firmware for guided, repeatable end-of-line verification of the Lord of Robots **LoR Core V3** robotics controller.
 
+An Android USB-host companion is also under engineering validation. It lives beside the Windows station and consumes the same hash-verified production firmware package and serial protocol.
+
 ## Download
 
 **[Download LoR Core V3 Test Station 1.14.2](https://github.com/LordofRobots/TestRig_LoR_Core_V3/releases/latest/download/LoR_Core_V3_Test_Station_Setup_1.14.2.exe)**
@@ -108,6 +110,10 @@ Build the self-contained application, free NSIS installer, firmware package, and
 
 The root [`VERSION`](VERSION) file is the authoritative desktop application version. Firmware versioning remains embedded in the production-test sketch and is extracted automatically during the release build.
 
+### Android engineering preview
+
+The native Android client supports CH340 USB detection, ESP32 firmware upload, the guided production workflow, local CSV history, and CSV export. Build and fixture-validation instructions are in the [Android guide](android/README.md). The Windows station remains the production-qualified reference until the Android USB flashing path passes the documented real-hardware checklist.
+
 ## Repository structure
 
 ```text
@@ -120,6 +126,9 @@ installer/
   build-installer.ps1                Repeatable release builder
   LoR_Core_V3_Test_Station.nsi       Free NSIS installer definition
   test_update_manager.py             Deterministic update validation
+android/
+  app/                                Native USB-host test-station APK
+  sync-firmware.ps1                   Shared Release firmware synchronizer
 docs/
   ARCHITECTURE.md                     System and trust architecture
   SERIAL_PROTOCOL.md                 Host-to-board serial protocol
@@ -133,6 +142,7 @@ Generated builds, local CSV records, Python caches, shortcuts, and release outpu
 - [System architecture](docs/ARCHITECTURE.md)
 - [Serial command protocol](docs/SERIAL_PROTOCOL.md)
 - [Installer and release guide](installer/README.md)
+- [Android build and validation guide](android/README.md)
 - [Release history](CHANGELOG.md)
 - [Security policy](SECURITY.md)
 

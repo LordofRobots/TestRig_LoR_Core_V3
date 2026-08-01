@@ -9,11 +9,14 @@ The LoR Core V3 Production Test Rig separates operator workflow, board-side hard
 | Component | Responsibility |
 |---|---|
 | Windows test station | Board detection, firmware upload, guided workflow, result evaluation, history, and updates |
+| Android test station | USB-host/CH340 transport, native ESP32 upload, guided workflow, history, and CSV export |
 | ESP32 production firmware | LoR-specific measurements, RF scans, control input detection, LED behavior, and persistent failure state |
 | Bundled esptool | Programs the approved ESP32 flash image set without Arduino IDE |
 | NSIS installer | Installs the frozen application for all users and preserves ProgramData records |
 | GitHub Release | Publishes the installer, firmware ZIP, and hash-verified update manifest |
 | CSV audit log | Stores one append-only row for every attempted production test |
+
+The Android and Windows clients remain independent front ends. They share the GitHub Release firmware manifest, exact flash layout, board protocol, result fields, and fail-safe behavior; neither platform depends on the other at runtime.
 
 ## Production flow
 
