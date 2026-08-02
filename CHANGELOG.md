@@ -22,6 +22,7 @@ All notable production changes are recorded here. Application versions follow se
 - Collapsed Test Setup into an expandable section so live results receive the available portrait space
 - Moved the primary Run Production Test action above Test Setup and hid it during active tests
 - Made the post-flash firmware handshake wait through the complete startup animation and retry after one automatic hard reset
+- Made live result rows expand to the complete multi-line title and detail content instead of clipping to the PASS/FAIL badge height
 
 ## [1.14.2] - 2026-08-01
 

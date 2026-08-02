@@ -322,8 +322,15 @@ public final class MainActivity extends Activity {
 
     private void addResult(JSONArray details,String name,boolean passed,String description) throws JSONException {
         JSONObject row=new JSONObject(); row.put("test",name); row.put("pass",passed); row.put("details",description); details.put(row);
-        ui(() -> { LinearLayout card=new LinearLayout(this); card.setPadding(dp(14),dp(10),dp(14),dp(10)); card.setGravity(Gravity.CENTER_VERTICAL); card.setBackground(bg(Color.rgb(247,249,252),10));
-            TextView mark=text(passed?"PASS":"FAIL",12,passed?GREEN:RED,true); card.addView(mark,lp(dp(58),dp(34))); LinearLayout words=new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL); words.addView(text(name,15,Color.rgb(20,36,58),true)); words.addView(text(description,12,Color.rgb(102,117,138),false)); card.addView(words,weight(1)); resultList.addView(card,marginLp(-1,-2,0,0,0,dp(7))); });
+        ui(() -> {
+            LinearLayout card=new LinearLayout(this); card.setPadding(dp(14),dp(11),dp(14),dp(11)); card.setGravity(Gravity.TOP); card.setBackground(bg(Color.rgb(247,249,252),10));
+            TextView mark=text(passed?"PASS":"FAIL",12,passed?GREEN:RED,true); mark.setGravity(Gravity.TOP); card.addView(mark,lp(dp(58),-2));
+            LinearLayout words=new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL);
+            TextView title=text(name,15,Color.rgb(20,36,58),true); title.setSingleLine(false); words.addView(title,lp(-1,-2));
+            TextView detail=text(description==null?"":description,12,Color.rgb(102,117,138),false); detail.setSingleLine(false); detail.setLineSpacing(0,1.08f); detail.setPadding(0,dp(3),0,0); words.addView(detail,lp(-1,-2));
+            card.addView(words,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1));
+            resultList.addView(card,marginLp(-1,-2,0,0,0,dp(7)));
+        });
     }
 
     private Map<String,String> blankRecord(){ Map<String,String> r=new LinkedHashMap<>(); for(String f:CsvStore.FIELDS)r.put(f,""); return r; }
