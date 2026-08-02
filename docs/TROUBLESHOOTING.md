@@ -109,4 +109,3 @@ Do not treat a power cycle, firmware upload alone, or a skipped required check a
 ## Reporting a reproducible issue
 
 Include station platform, application version, firmware version, exact message, connection hardware, and sanitized reproduction steps. Remove eFuse MACs, printed serials, operators, SSIDs, and production CSV content. Use the private process in [SECURITY.md](../SECURITY.md) for vulnerabilities.
-

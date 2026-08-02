@@ -128,4 +128,3 @@ Before merging a production change:
 - Verify Windows automatic update metadata and Android embedded firmware versions.
 - Verify local history and exported CSV.
 - Retain hashes and exact distributed artifacts with the manufacturing release record.
-

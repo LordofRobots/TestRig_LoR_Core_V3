@@ -94,4 +94,3 @@ A simple local production policy is recommended:
 ## Privacy
 
 Production CSV files may contain device identifiers, printed serials, operator identifiers, and factory SSIDs. Treat them as manufacturing records. Sanitize all of those fields before sharing a row, screenshot, or diagnostic outside the authorized production environment.
-
