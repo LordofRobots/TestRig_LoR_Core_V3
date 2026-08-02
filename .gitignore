@@ -22,6 +22,18 @@ venv/
 *.log
 *.tmp
 *.bak
+.codex-remote-attachments/
+android/native-build.*.log
+
+# Android local SDK/build output and synchronized release firmware
+android/.gradle/
+android/app/.cxx/
+android/local.properties
+android/app/build/
+android/app/src/main/assets/firmware/*
+!android/app/src/main/assets/firmware/.gitkeep
+*.apk
+*.aab
 
 # Production data is local and may contain manufacturing identifiers
 production_test/results/*.csv

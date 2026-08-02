@@ -1,97 +1,159 @@
-# LoR Core V3 Production Test Station
+# LoR Core V3 Windows Production Station
 
-This production station focuses on the LoR-specific circuitry requested for end-of-line testing:
+The Windows station is the fixed-bench production client. It is distributed as a self-contained 64-bit installer with the branded UI, standalone uploader, verified firmware, automatic updates, local CSV history, desktop/Start Menu shortcuts, and uninstaller.
 
-- automatic USB-serial/CH340 detection;
-- automatic upload of specialized test firmware;
-- ESP32 eFuse MAC as the permanent unique board ID, plus an optional manufacturing serial label;
-- battery/input-voltage measurement using a 20-sample average and a 6–12 V tolerance check;
-- Wi-Fi scan with network count, target/best SSID, RSSI, and a configurable RSSI floor;
-- active Bluetooth Low Energy scan with device count and strongest observed RSSI;
-- automatic guided detection of all four buttons and the user switch;
-- live button LED feedback: A yellow, B green, C red, and D blue while held;
-- a brief spatial rainbow-vortex animation on every power-up, emerging from black, blooming across the four corners, and returning to black before the persistent red-failure state or normal icy-blue animation fades in;
-- a smooth icy-blue breathing orb that circles the physical 46 mm square LED layout, with operator confirmation;
-- a clear overall PASS/FAIL result;
-- a pass indication (solid green for two seconds, then a smooth transition to the icy-blue spatial-orb baseline);
-- a fail-safe persistent failure indication (solid red, restored after reset or power cycling);
-- one append-only row per test attempt in `results/lor_core_v3_results.csv`;
-- a searchable **Test History** workspace with a run table on the left and structured board details, measurement cards, and per-check results on the right.
+Operator PCs do not need Python, Arduino IDE, the ESP32 board package, FastLED, or a separate esptool installation.
 
-The desktop interface uses the official animated Lord of Robots GIF and flame icon. Test setup and the high-visibility operator instruction banner are contained within **Live Test**; amber highlighting identifies steps that are waiting for operator action. Voltage and RF thresholds remain available under the collapsible **Test parameters** control. During firmware upload, the progress bar follows the main firmware image percentage reported by Espressif's uploader rather than showing an estimated timer.
+## Requirements
 
-For continuous production use, the animated GIF reuses one Tk image buffer rather than retaining every frame in memory. Animation work pauses while the window is minimized. Test History loads only when opened and holds at most the newest 2,000 records in memory while the complete CSV remains on disk.
+- Windows 10 or Windows 11, 64-bit
+- Available USB data port
+- WCH CH340/CH341 driver (normally installed automatically by Windows)
+- LoR Core fixture supply from 6.0 V to 12.0 V through XT30
+- Internet is optional; it is used only for a non-blocking update check
 
-The current board firmware is `production-test-1.14`. Its startup vortex rotates continuously into a fully dark frame, then the icy-blue orb begins with a linear fade so there is no stopped frame, deliberate delay, or brightness jump between animations.
+## Install
 
-## Start the station
+1. Download the latest `LoR_Core_V3_Test_Station_Setup_x.y.z.exe` from [GitHub Releases](https://github.com/LordofRobots/TestRig_LoR_Core_V3/releases/latest).
+2. Run the installer as an administrator.
+3. Choose the installation directory or accept the default.
+4. Launch from the desktop or Start Menu shortcut.
+5. If Windows does not create a COM port when the board is attached, install/repair the WCH CH340 driver.
 
-On an installed production station, use the **LoR Core V3 Test Station** desktop or Start Menu shortcut. The installer includes the Python runtime, serial dependency, ESP32 uploader, and verified firmware, so Arduino development tools are not required on the operator PC.
+The current installer is not Authenticode-signed. Windows SmartScreen may report an unknown publisher. Release assets are delivered over HTTPS and the station verifies update hashes before activation.
 
-For source development, double-click `launch_test_station.ps1`, or run:
+Default application location:
+
+```text
+C:\Program Files\Lord of Robots\LoR Core V3 Test Station
+```
+
+Writable application data:
+
+```text
+C:\ProgramData\Lord of Robots\LoR Core V3 Test Station
+```
+
+## Operator workflow
+
+1. Apply 6-12 V fixture power through XT30.
+2. Connect the LoR Core through USB-C.
+3. Wait for the CH340/CH341 COM port and the green **Run Production Test** action.
+4. Choose Auto-start:
+   - On waits two seconds and starts once for each newly attached board.
+   - Off waits for the operator to click Run.
+5. Optionally enter the printed board serial and operator identifier.
+6. Open **Test Parameters** only when fixture/RF thresholds must change.
+7. Start the test and keep power/USB connected.
+8. Watch upload progress. The installed station uploads its verified binary package; it does not compile firmware on the production PC.
+9. Approve or reject the rainbow startup and icy-blue spatial LED animation.
+10. Follow the high-visibility prompts to press/hold A-D and toggle the user switch.
+11. Read the final PASS/FAIL result.
+12. Use **Test History** to search, filter, and inspect measurements or failures.
+
+## Test Parameters
+
+| Parameter | Default | Meaning |
+|---|---:|---|
+| Fixture VIN | 9.0 V | Nominal applied battery/input voltage |
+| VIN tolerance | 3.0 V | Creates the default 6.0-12.0 V pass window |
+| Factory Wi-Fi SSID | blank | Exact AP to require; blank uses strongest visible AP |
+| Minimum RSSI | -85 dBm | Lowest accepted Wi-Fi RSSI |
+
+The Windows production sequence always performs VIN. The conversion is:
+
+```text
+volts = averaged_ADC * 0.0063492 + 0.697
+```
+
+It is based on the corrected 8.000 V fixture reference and uses 20 ADC samples. Establish final VIN and RF thresholds from fixture capability and golden-board studies.
+
+## Guided control mapping
+
+| Prompt | Expected GPIO | LED feedback while held |
+|---|---:|---|
+| Button A | 35 | Yellow |
+| Button B | 39 | Green |
+| Button C | 38 | Red |
+| Button D | 37 | Blue |
+| User switch | 36 | N/A |
+
+The station captures a baseline, waits for the requested transition, rejects unexpected simultaneous GPIO changes, and prompts for button release before continuing.
+
+## Board state and retesting
+
+`TEST_START` provisionally writes failure to ESP32 NVS. Only the final `TEST_PASS` clears it.
+
+- Pass: green for two seconds, then icy blue.
+- Failed check: solid red.
+- Interrupted test: red after reset/power cycle.
+- Retest: connect the red board and run the complete sequence; a pass clears red.
+
+Power-up itself does not run VIN, Wi-Fi, BLE, or input tests. The board performs those checks only when commanded by the station.
+
+## Test History and CSV
+
+The station appends results to:
+
+```text
+C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results\lor_core_v3_results.csv
+```
+
+Test History provides a filterable run list and structured details. For long-running stability, the UI displays at most the newest 2,000 records while leaving the full file unchanged. Back up the file according to [Data and Traceability](../docs/DATA_AND_TRACEABILITY.md).
+
+Application upgrades and uninstall operations preserve ProgramData.
+
+## Automatic updates
+
+Shortly after startup, the installed station performs one background query against normal public GitHub Releases.
+
+- Draft and prerelease releases are ignored.
+- No GitHub account or embedded token is used.
+- Application and firmware versions are compared independently.
+- Installer ZIP/package hashes, individual image hashes, product/protocol identity, filenames, and flash addresses are validated.
+- New firmware is cached under ProgramData and becomes active only after validation.
+- A newer installer is downloaded, verified, and launched for an in-place update.
+- Network or validation errors leave the installed app and last verified firmware available.
+
+There is no resident updater service and production testing does not require network access.
+
+## Continuous operation
+
+The animated logo reuses one Tk image buffer and pauses while minimized. Test History loads only when opened and retains at most 2,000 rows in memory. The reference Windows 11 station uses approximately 25 MB of private memory at steady state.
+
+For overnight or multi-shift operation:
+
+- leave Windows power settings appropriate for the fixture;
+- prevent automatic USB selective suspend if it causes board disconnects;
+- schedule CSV backups;
+- close other COM-port applications;
+- restart the station during planned maintenance rather than during a test.
+
+## Run from source
+
+Source mode is for development, not production deployment.
+
+Prerequisites:
+
+- Python 3
+- Arduino IDE 2.x
+- Espressif ESP32 Arduino core 3.x
+- FastLED
+
+Launch from the repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\production_test\launch_test_station.ps1
 ```
 
-The launcher installs `pyserial` if it is missing. Arduino IDE 2.x, the Espressif `esp32` board package, and FastLED must already be installed.
+The launcher installs `pyserial` when missing. Source mode compiles firmware when its source is newer than the cached binary. Source-run CSV is written under the ignored repository-level `results` directory.
 
-Installed test history is written to `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results`. Source runs use the ignored `results` directory at the repository root.
+## Build the installer
 
-The installed station checks GitHub Releases once after launch. This check runs in a background thread and does not delay board detection or testing. The status in the upper-right corner identifies the application version, active firmware version, and whether firmware is bundled or downloaded. Verified downloaded firmware is cached under `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\firmware`.
+The release-builder path is documented in [Release Process](../docs/RELEASE_PROCESS.md) and [Installer README](../installer/README.md). The main command is:
 
-For long-running stations, the animated GIF reuses a single image buffer and pauses while minimized. Test History loads only when its tab is opened and retains at most the newest 2,000 rows in memory; the complete CSV audit file remains unchanged on disk.
+```powershell
+.\installer\build-installer.ps1
+```
 
-## Operator workflow
-
-1. Power the LoR Core through XT30 with a supply between 6.0 V and 12.0 V, then connect USB-C.
-2. Wait for the candidate COM port to appear and the large green **RUN TEST** button to enable.
-3. Choose **AUTO-START: ON** for automatic testing after each newly connected LoR Core, or **AUTO-START: OFF** for manual starts. Automatic mode waits two seconds for USB to settle, triggers each physical connection once, and re-arms only after unplugging the board.
-4. Optionally enter a printed serial number and operator initials. The ESP32 eFuse MAC is always recorded as `board_id`.
-5. With automatic mode off, click **RUN TEST**. The station compiles and uploads the dedicated firmware automatically. Subsequent boards reuse the verified binary unless the sketch changes, so they go directly to upload.
-6. Watch the four LEDs. They should show a smooth rainbow vortex that emerges from black, blooms across the board, and returns to black, followed by an icy-blue spatial orb circling the board. Click **LEDs OK** or **LED FAIL**.
-7. Follow the large prompt to press and hold buttons A, B, C, and D, then toggle the switch. While held, A lights the LEDs yellow, B green, C red, and D blue. Releasing the button restores the icy-blue spatial orb. No keyboard confirmation is needed; the board detects each transition.
-8. Read the large PASS/FAIL result. The CSV row is appended even for test failures and, where possible, station errors.
-9. Open **Test History** to search previous boards, filter PASS/FAIL records, and inspect the complete details for any selected test.
-
-At `TEST_START`, the firmware writes a provisional failed state to ESP32 NVS. Only a fully completed pass clears it. This means a failed test, station interruption, reset, or power loss cannot accidentally leave the board showing a normal baseline. On every boot the spatial rainbow startup runs first; the firmware then selects locked red or the normal icy-blue spatial orb. Start a new test from the UI to retest a red-latched board; a successful result clears the latch.
-
-## Firmware test scheduling
-
-Power-up does not run VIN, Wi-Fi, Bluetooth, or control tests. The firmware only restores its persistent state, plays the startup LEDs, reports identity metadata, maintains the baseline animation, provides button color feedback, and waits for the station. Measurement and RF checks run only when the UI sends `VIN`, `WIFI`, `BT`, or `INPUTS`. Button feedback remains available during normal operation but is disabled while failure red is locked.
-
-## Configuration
-
-- **Fixture VIN / tolerance:** The default pass window is 6.0–12.0 V, represented as a 9.0 V midpoint with a +/-3.0 V tolerance. The calibrated conversion is `volts = ADC * 0.0063492 + 0.697`, based on an 8.000 V fixture reference that previously read 8.382 V.
-- **Factory Wi-Fi SSID:** If set, that exact AP must be visible at or above the RSSI floor. If blank, the strongest visible AP is used. A fixed factory AP makes results repeatable.
-- **Minimum RSSI:** Defaults to -85 dBm. Establish the real limit from a controlled golden-board study rather than treating this initial value as a final RF specification.
-- **Control mapping:** The April 2026 firmware mapping is confirmed as authoritative. It is fixed in the test station so an operator cannot accidentally select the incorrect datasheet mapping.
-
-## Datasheet correction required
-
-| Physical control | Correct GPIO | Incorrect datasheet GPIO |
-|---|---:|---:|
-| Button A | GPIO35 | GPIO35 |
-| Button B | GPIO39 | GPIO36 |
-| Button C | GPIO38 | GPIO37 |
-| Button D | GPIO37 | GPIO38 |
-| User switch | GPIO36 | GPIO39 |
-
-The August 2025 datasheet should be corrected to BTN_A/B/C/D/SW = GPIO35/39/38/37/36. The production tester now uses this mapping exclusively.
-
-## Bluetooth and RSSI scope
-
-The DUT scans both Wi-Fi and BLE over the air. The CSV records Wi-Fi RSSI plus the BLE device count and strongest observed BLE RSSI in the details field. The default BLE pass criterion is at least one received advertisement. For repeatable RF screening, place a fixed "golden" BLE beacon at a controlled distance, then add its identity and an acceptable RSSI window as fixture requirements; ambient devices alone prove radio operation but do not provide calibrated sensitivity testing.
-
-## Result file
-
-The CSV uses one row per board/test attempt and includes:
-
-- UTC timestamp, operator, optional printed serial, eFuse MAC, COM port;
-- test-firmware version and basic identity fields;
-- measured VIN, the averaged raw ADC count, sample count, and pass/fail;
-- Wi-Fi network count, target SSID, RSSI, and pass/fail;
-- Bluetooth, every control, LED, and overall pass/fail;
-- a compact JSON details field preserving the complete result list.
-
-Do not edit older rows in production. Back up the CSV regularly or move the append operation to a controlled database once multiple stations are running concurrently.
+For failures and recovery procedures, see [Troubleshooting](../docs/TROUBLESHOOTING.md).

@@ -2,6 +2,32 @@
 
 All notable production changes are recorded here. Application versions follow semantic versioning; board firmware uses the `production-test-x.y` scheme.
 
+## Unreleased
+
+### Added
+
+- Native Android 1.0.0 production client for USB-host LoR Core testing
+- CH340 detection, native ESP32 ROM flashing, guided checks, CSV history, and export
+- Hash-verified synchronization from the common GitHub Release firmware package
+- Android emulator build, install, launch, and responsive-layout validation
+- Phone-first portrait UI with stacked live-test and history panels
+- Espressif ESP Serial Flasher v1.11.0 native uploader with loader stubs and MD5 verification
+- Default-on Android Test Setup toggle for optionally skipping the battery-voltage check
+- Comprehensive production documentation for Windows and Android operation, architecture, data retention, troubleshooting, and releases
+- Android 1.0.0 production baseline validated on the Pixel 6 reference USB-host fixture
+
+### Fixed
+
+- Auto-start now cancels immediately when disabled or when the armed USB device is detached
+- ESP32 bootloader entry retries with extended timing and reports whether any serial bytes were received
+- Preserved complete CH340 USB packets in the Android native receive queue, preventing loader-response loss
+- Added Android 16 KB memory-page alignment and limited APK native binaries to ARM phone architectures
+- Collapsed Test Setup into an expandable section so live results receive the available portrait space
+- Moved the primary Run Production Test action above Test Setup and hid it during active tests
+- Made the post-flash firmware handshake wait through the complete startup animation and retry after one automatic hard reset
+- Made live result rows expand to the complete multi-line title and detail content instead of clipping to the PASS/FAIL badge height
+- Updated Android branding header to identify the application as Production Testing
+
 ## [1.14.2] - 2026-08-01
 
 ### Added

@@ -14,6 +14,7 @@ body:
       label: Affected component
       options:
         - Windows test station
+        - Android test station
         - ESP32 production-test firmware
         - Installer or automatic updater
         - Documentation
@@ -24,7 +25,7 @@ body:
     attributes:
       label: Version
       description: Application and firmware versions shown by the station.
-      placeholder: "App 1.14.2 / firmware production-test-1.14"
+      placeholder: "Windows 1.14.2 or Android 1.0.0 / firmware production-test-1.14"
     validations:
       required: true
   - type: textarea

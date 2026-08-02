@@ -1,6 +1,6 @@
 # LoR Core V3 Production-Test Serial Protocol
 
-The desktop station communicates with the dedicated test firmware over USB serial at 115200 baud. Commands are UTF-8/ASCII lines terminated with `\n`. Responses are one-line JSON objects.
+The Windows and Android stations communicate with the dedicated test firmware over USB serial at 115200 baud. Commands are UTF-8/ASCII lines terminated with `\n`. Responses are one-line JSON objects.
 
 The documented firmware release is `production-test-1.14` and the serial protocol version is `1`.
 
@@ -55,3 +55,5 @@ The `details` field is a compact comma-separated set of measurements. The UI sto
 ## Fail-safe state
 
 `TEST_START` writes a failed state before testing begins. Only `TEST_PASS` clears it. A reset, power interruption, station crash, or failed check therefore leaves the board visibly red after its next startup rainbow sequence. A failed board still plays the startup presentation first, fades into solid red, and then ignores button color overrides.
+
+Android may omit the `VIN` command when **Check Battery Voltage** is disabled. This is a host workflow decision; the protocol and firmware behavior are unchanged.

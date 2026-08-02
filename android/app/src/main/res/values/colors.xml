@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_blue">#032F82</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="background">#F3F6FA</color>
+    <color name="success">#18A957</color>
+    <color name="failure">#DF4545</color>
+</resources>
