@@ -27,8 +27,8 @@ public final class MainActivity extends Activity {
     private UsbSerialDriver detectedDriver;
     private UsbTransport activeTransport;
     private CsvStore csvStore;
-    private LinearLayout body, livePage, historyPage, resultList, historyList;
-    private TextView connectionText, instructionText, percentText, historyDetails, firmwareText;
+    private LinearLayout body, livePage, historyPage, resultList, historyList, setupCard, setupContent, resultsCard, ledActionRow;
+    private TextView connectionText, instructionText, percentText, historyDetails, firmwareText, setupToggleText;
     private Button runButton, ledGoodButton, ledFailButton, liveTab, historyTab;
     private ProgressBar progress;
     private Switch autoStart;
@@ -79,19 +79,25 @@ public final class MainActivity extends Activity {
     private void buildUi() {
         getWindow().setStatusBarColor(BLUE);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.rgb(243,246,250));
-        root.setPadding(dp(24), dp(16), dp(24), dp(18)); setContentView(root);
+        root.setPadding(dp(16), dp(8), dp(16), dp(12)); setContentView(root);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top = Build.VERSION.SDK_INT >= 30 ? insets.getInsets(WindowInsets.Type.statusBars()).top : insets.getSystemWindowInsetTop();
+            int bottom = Build.VERSION.SDK_INT >= 30 ? insets.getInsets(WindowInsets.Type.navigationBars()).bottom : insets.getSystemWindowInsetBottom();
+            view.setPadding(dp(16), top + dp(8), dp(16), bottom + dp(12));
+            return insets;
+        });
 
-        LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.VERTICAL); root.addView(header, lp(-1, dp(104)));
-        LinearLayout brandRow = row(); brandRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(brandRow, lp(-1, dp(54)));
+        LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.VERTICAL); root.addView(header, lp(-1, dp(94)));
+        LinearLayout brandRow = row(); brandRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(brandRow, lp(-1, dp(46)));
         ImageView logo = new ImageView(this); logo.setImageResource(com.lordofrobots.lorcoretest.R.drawable.lor_logo); logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        brandRow.addView(logo, lp(dp(154), -1));
+        brandRow.addView(logo, lp(dp(138), -1));
         TextView title = text("CORE V3  ·  " + BuildConfig.VERSION_NAME, 13, BLUE, true); title.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); title.setSingleLine(true); brandRow.addView(title, weight(1));
-        LinearLayout controlRow = row(); controlRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(controlRow, lp(-1, dp(50)));
+        LinearLayout controlRow = row(); controlRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(controlRow, lp(-1, dp(48)));
         connectionText = pill("NO BOARD", Color.rgb(102,117,138)); controlRow.addView(connectionText, weight(1));
         autoStart = new Switch(this); autoStart.setText(" AUTO-START"); autoStart.setTextColor(BLUE); autoStart.setTextSize(13); autoStart.setChecked(getPreferences(0).getBoolean("auto", true));
-        autoStart.setOnCheckedChangeListener((v, checked) -> { getPreferences(0).edit().putBoolean("auto", checked).apply(); if (!checked) cancelAutoStart(); }); controlRow.addView(autoStart, lp(dp(150), dp(48)));
+        autoStart.setOnCheckedChangeListener((v, checked) -> { getPreferences(0).edit().putBoolean("auto", checked).apply(); if (!checked) cancelAutoStart(); }); controlRow.addView(autoStart, lp(dp(142), dp(46)));
 
-        LinearLayout tabs = row(); root.addView(tabs, lp(-1, dp(50)));
+        LinearLayout tabs = row(); root.addView(tabs, marginLp(-1, dp(48), 0, dp(4), 0, dp(8)));
         liveTab = button("LIVE TEST", BLUE); historyTab = button("TEST HISTORY", Color.rgb(102,117,138));
         liveTab.setOnClickListener(v -> showPage(true)); historyTab.setOnClickListener(v -> showPage(false));
         tabs.addView(liveTab, weight(1)); tabs.addView(space(dp(10), 1)); tabs.addView(historyTab, weight(1));
@@ -104,27 +110,35 @@ public final class MainActivity extends Activity {
 
     private LinearLayout buildLivePage() {
         LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout active = card(); active.setPadding(dp(18),dp(14),dp(18),dp(14)); page.addView(active, lp(-1, dp(330)));
+        LinearLayout active = card(); active.setPadding(dp(18),dp(14),dp(18),dp(14)); page.addView(active, lp(-1, -2));
         active.addView(text("LIVE PRODUCTION TEST", 13, BLUE, true));
-        instructionText = text("Connect the LoR Core with USB-C and apply the 6–12 V fixture supply.", 21, Color.rgb(20,36,58), true);
-        instructionText.setGravity(Gravity.CENTER_VERTICAL); instructionText.setPadding(0,dp(5),0,dp(5)); active.addView(instructionText, lp(-1, dp(100)));
+        instructionText = text("Connect the LoR Core with USB-C and apply the 6–12 V fixture supply.", 20, Color.rgb(20,36,58), true);
+        instructionText.setGravity(Gravity.CENTER_VERTICAL); instructionText.setPadding(0,dp(6),0,dp(6)); instructionText.setMaxLines(4); active.addView(instructionText, lp(-1, -2));
         LinearLayout progressRow = row(); progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setMax(100); progress.setProgressTintList(android.content.res.ColorStateList.valueOf(BLUE));
-        progressRow.addView(progress, weight(1)); percentText = text("0%", 13, BLUE, true); percentText.setGravity(Gravity.END|Gravity.CENTER_VERTICAL); progressRow.addView(percentText, lp(dp(52),dp(30))); active.addView(progressRow, lp(-1,dp(34)));
-        LinearLayout ledRow = row(); ledGoodButton = button("LEDS LOOK GOOD", GREEN); ledFailButton = button("LED FAILURE", RED); ledGoodButton.setVisibility(View.GONE); ledFailButton.setVisibility(View.GONE);
-        ledGoodButton.setOnClickListener(v -> answerLed(true)); ledFailButton.setOnClickListener(v -> answerLed(false)); ledRow.addView(ledGoodButton, weight(1)); ledRow.addView(space(dp(8),1)); ledRow.addView(ledFailButton, weight(1)); active.addView(ledRow, lp(-1,dp(48)));
-        ScrollView resultsScroll = new ScrollView(this); resultList = new LinearLayout(this); resultList.setOrientation(LinearLayout.VERTICAL); resultsScroll.addView(resultList); active.addView(resultsScroll, vWeight(1));
+        progressRow.addView(progress, weight(1)); percentText = text("0%", 13, BLUE, true); percentText.setGravity(Gravity.END|Gravity.CENTER_VERTICAL); progressRow.addView(percentText, lp(dp(52),dp(30))); active.addView(progressRow, lp(-1,dp(32)));
+        ledActionRow = row(); ledGoodButton = button("LEDS LOOK GOOD", GREEN); ledFailButton = button("LED FAILURE", RED);
+        ledGoodButton.setOnClickListener(v -> answerLed(true)); ledFailButton.setOnClickListener(v -> answerLed(false)); ledActionRow.addView(ledGoodButton, weight(1)); ledActionRow.addView(space(dp(8),1)); ledActionRow.addView(ledFailButton, weight(1)); ledActionRow.setVisibility(View.GONE); active.addView(ledActionRow, marginLp(-1,dp(48),0,dp(8),0,0));
 
         page.addView(space(1,dp(12)));
-        LinearLayout setup = card(); setup.setPadding(dp(18),dp(14),dp(18),dp(14)); page.addView(setup, vWeight(1));
-        setup.addView(text("TEST SETUP", 13, BLUE, true));
-        ScrollView setupScroll = new ScrollView(this); setupScroll.setFillViewport(true);
-        LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); setupScroll.addView(form); setup.addView(setupScroll, vWeight(1));
+        ScrollView contentScroll = new ScrollView(this); contentScroll.setFillViewport(true); page.addView(contentScroll, vWeight(1));
+        LinearLayout content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); contentScroll.addView(content);
+
+        resultsCard = card(); resultsCard.setPadding(dp(18),dp(14),dp(18),dp(14)); resultsCard.addView(text("TEST RESULTS", 13, BLUE, true));
+        resultList = new LinearLayout(this); resultList.setOrientation(LinearLayout.VERTICAL); resultsCard.addView(resultList, marginLp(-1,-2,0,dp(10),0,0)); resultsCard.setVisibility(View.GONE); content.addView(resultsCard, lp(-1,-2));
+
+        setupCard = card(); setupCard.setPadding(dp(18),dp(8),dp(18),dp(10)); content.addView(setupCard, marginLp(-1,-2,0,dp(10),0,0));
+        LinearLayout setupHeader = row(); setupHeader.setGravity(Gravity.CENTER_VERTICAL); setupHeader.setPadding(0,dp(2),0,dp(2));
+        setupHeader.addView(text("TEST SETUP", 13, BLUE, true), weight(1));
+        setupToggleText = text("SHOW", 12, BLUE, true); setupToggleText.setGravity(Gravity.END|Gravity.CENTER_VERTICAL); setupHeader.addView(setupToggleText, lp(dp(72),dp(40)));
+        setupHeader.setOnClickListener(v -> setSetupExpanded(setupContent.getVisibility() != View.VISIBLE)); setupCard.addView(setupHeader, lp(-1,dp(44)));
+        setupContent = new LinearLayout(this); setupContent.setOrientation(LinearLayout.VERTICAL); setupContent.setVisibility(View.GONE); setupCard.addView(setupContent, lp(-1,-2));
+        LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); setupContent.addView(form, lp(-1,-2));
         operatorInput = field(form, "Operator", ""); labelInput = field(form, "Board serial / label", "");
         LinearLayout voltage = row(); form.addView(voltage, lp(-1, dp(70)));
         vinInput = miniField(voltage, "Fixture VIN", "9.0"); toleranceInput = miniField(voltage, "Tolerance", "3.0");
         ssidInput = field(form, "Factory Wi-Fi SSID (optional)", ""); rssiInput = field(form, "Minimum RSSI (dBm)", "-85");
         runButton = button("CONNECT A LoR CORE", Color.rgb(150,160,174)); runButton.setEnabled(false); runButton.setTextSize(18); runButton.setOnClickListener(v -> startTest());
-        setup.addView(runButton, marginLp(-1, dp(64), 0, dp(10), 0, 0));
+        setupContent.addView(runButton, marginLp(-1, dp(60), 0, dp(12), 0, 0));
 
         return page;
     }
@@ -201,12 +215,14 @@ public final class MainActivity extends Activity {
         try { target = Double.parseDouble(vinInput.getText().toString()); tolerance = Double.parseDouble(toleranceInput.getText().toString()); rssi = Integer.parseInt(rssiInput.getText().toString()); }
         catch (Exception error) { toast("Check the VIN, tolerance, and RSSI settings."); return; }
         if (tolerance <= 0) { toast("VIN tolerance must be greater than zero."); return; }
-        running = true; runButton.setEnabled(false); resultList.removeAllViews(); progress.setProgress(0); percentText.setText("0%"); showPage(true);
+        running = true; runButton.setEnabled(false); resultList.removeAllViews(); resultsCard.setVisibility(View.VISIBLE); setSetupExpanded(false); progress.setProgress(0); percentText.setText("0%"); showPage(true);
         String operator = operatorInput.getText().toString().trim(), label = labelInput.getText().toString().trim(), ssid = ssidInput.getText().toString().trim();
-        worker.submit(() -> runProductionTest(operator, label, target, tolerance, ssid, rssi));
+        boolean flashOnly = BuildConfig.DEBUG && getIntent().getBooleanExtra("diagnostic_flash_only", false);
+        getIntent().removeExtra("diagnostic_flash_only");
+        worker.submit(() -> runProductionTest(operator, label, target, tolerance, ssid, rssi, flashOnly));
     }
 
-    private void runProductionTest(String operator, String label, double target, double tolerance, String ssid, int minRssi) {
+    private void runProductionTest(String operator, String label, double target, double tolerance, String ssid, int minRssi, boolean flashOnly) {
         Map<String,String> record = blankRecord(); JSONArray details = new JSONArray(); BoardSession board = null;
         record.put("timestamp_utc", Instant.now().toString()); record.put("operator", operator); record.put("serial_label", label); record.put("com_port", "USB/CH340 Android"); record.put("control_mapping", "Confirmed LoR Core V3 mapping");
         try {
@@ -220,6 +236,11 @@ public final class MainActivity extends Activity {
                 public void status(String text) { MainActivity.this.status(text); }
                 public void progress(int value) { ui(() -> { progress.setProgress(value); percentText.setText(value + "%"); }); }
             }).flash(firmware.images);
+            if (flashOnly) {
+                addResult(details, "Firmware upload", true, "ESP32 ROM synchronization and all four firmware images completed");
+                status("UPLOAD VERIFIED — firmware programmed successfully. Production checks were not started.");
+                return;
+            }
             status("Waiting for the LoR Core startup animation..."); Thread.sleep(2900); activeTransport.drain(); board = new BoardSession(activeTransport);
             JSONObject info = board.info();
             if (!"LoR Core V3".equals(info.optString("product"))) throw new IllegalStateException("Programmed device did not return the LoR Core V3 handshake");
@@ -253,17 +274,23 @@ public final class MainActivity extends Activity {
             record.put("details_json",details.toString()); csvStore.append(record); complete(overall,record.get("board_id"));
         } catch(Exception error) {
             if(board!=null) try { board.result("TEST_FAIL","TEST_FAIL",4000); } catch(Exception ignored) { }
-            try { record.put("overall_pass","false"); JSONObject row=new JSONObject(); row.put("test","Station error"); row.put("pass",false); row.put("details",error.getMessage()); details.put(row); record.put("details_json",details.toString()); csvStore.append(record); } catch(Exception ignored) { }
+            try { record.put("overall_pass","false"); addResult(details,"Upload / station",false,error.getMessage()); record.put("details_json",details.toString()); if (!flashOnly) csvStore.append(record); } catch(Exception ignored) { }
             ui(() -> { statusDirect("TEST STOPPED — " + (error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()), RED); toast("Production test failed"); });
-        } finally { closeTransport(); running=false; ui(() -> { hideLedButtons(); refreshUsb(false); loadHistory(); }); }
+        } finally { closeTransport(); running=false; ui(() -> { hideLedButtons(); setSetupExpanded(false); refreshUsb(false); loadHistory(); }); }
+    }
+
+    private void setSetupExpanded(boolean expanded) {
+        if (setupContent == null) return;
+        setupContent.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        setupToggleText.setText(expanded ? "HIDE" : "SHOW");
     }
 
     private boolean awaitLed() throws InterruptedException {
-        ledAnswer=null; ledLatch=new CountDownLatch(1); ui(() -> { ledGoodButton.setVisibility(View.VISIBLE); ledFailButton.setVisibility(View.VISIBLE); });
+        ledAnswer=null; ledLatch=new CountDownLatch(1); ui(() -> ledActionRow.setVisibility(View.VISIBLE));
         boolean answered=ledLatch.await(120,TimeUnit.SECONDS); ui(this::hideLedButtons); return answered&&Boolean.TRUE.equals(ledAnswer);
     }
     private void answerLed(boolean passed) { ledAnswer=passed; CountDownLatch latch=ledLatch; if(latch!=null) latch.countDown(); hideLedButtons(); }
-    private void hideLedButtons() { ledGoodButton.setVisibility(View.GONE); ledFailButton.setVisibility(View.GONE); }
+    private void hideLedButtons() { ledActionRow.setVisibility(View.GONE); }
 
     private void addResult(JSONArray details,String name,boolean passed,String description) throws JSONException {
         JSONObject row=new JSONObject(); row.put("test",name); row.put("pass",passed); row.put("details",description); details.put(row);

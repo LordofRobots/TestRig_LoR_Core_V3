@@ -11,11 +11,15 @@ All notable production changes are recorded here. Application versions follow se
 - Hash-verified synchronization from the common GitHub Release firmware package
 - Android emulator build, install, launch, and responsive-layout validation
 - Phone-first portrait UI with stacked live-test and history panels
+- Espressif ESP Serial Flasher v1.11.0 native uploader with loader stubs and MD5 verification
 
 ### Fixed
 
 - Auto-start now cancels immediately when disabled or when the armed USB device is detached
 - ESP32 bootloader entry retries with extended timing and reports whether any serial bytes were received
+- Preserved complete CH340 USB packets in the Android native receive queue, preventing loader-response loss
+- Added Android 16 KB memory-page alignment and limited APK native binaries to ARM phone architectures
+- Collapsed Test Setup into an expandable section so live results receive the available portrait space
 
 ## [1.14.2] - 2026-08-01
 

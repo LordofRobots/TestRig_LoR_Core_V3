@@ -4,7 +4,7 @@ The Android client is a lightweight, native companion to the Windows production 
 
 ## Current status
 
-Version `0.1.0` is an engineering preview. The APK builds, installs, and runs in portrait mode on a Pixel 6. Real-device validation has confirmed Android USB-host operation, CH340 detection, and persistent USB permission. Automatic ROM flashing and the complete test workflow must still pass the production-validation checklist before production use.
+Version `0.1.0` is an engineering preview. The APK builds, installs, and runs in portrait mode on a Pixel 6. Real-device validation has confirmed Android USB-host operation, CH340 detection, persistent USB permission, automatic ESP32 loader entry, four-image flashing, byte-accurate progress, MD5 verification, and target reset. The complete guided production workflow must still pass the production-validation checklist before production use.
 
 ## Device requirements
 
@@ -44,7 +44,7 @@ The synchronized binaries and APK outputs are intentionally ignored by Git. GitH
 
 - CH340 attach/detach detection and Android USB permission
 - Optional one-shot auto-start after a newly connected board is authorized
-- Native ESP32 ROM bootloader upload with byte-accurate progress
+- Espressif ESP Serial Flasher v1.11.0 with loader-stub upload, byte-accurate progress, retries, and MD5 verification
 - Hash-verified `production-test-1.14` four-image firmware package
 - Board eFuse MAC identity and metadata
 - Twenty-sample VIN and raw ADC result
@@ -52,7 +52,9 @@ The synchronized binaries and APK outputs are intentionally ignored by Git. GitH
 - Guided LED, buttons A–D, and user-switch checks
 - Persistent red failure latch and green pass confirmation
 - Local CSV history using the Windows-compatible field order
+- Compact portrait live-test UI with expandable setup and scrolling test results
 - Stacked history list/details UI optimized for portrait use, plus Android document-provider CSV export
+- 16 KB Android memory-page compatibility and ARM-only release packaging
 
 ## Production-validation checklist
 
