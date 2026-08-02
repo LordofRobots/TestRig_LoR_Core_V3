@@ -12,6 +12,7 @@ All notable production changes are recorded here. Application versions follow se
 - Android emulator build, install, launch, and responsive-layout validation
 - Phone-first portrait UI with stacked live-test and history panels
 - Espressif ESP Serial Flasher v1.11.0 native uploader with loader stubs and MD5 verification
+- Default-on Android Test Setup toggle for optionally skipping the battery-voltage check
 
 ### Fixed
 

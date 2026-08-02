@@ -48,6 +48,7 @@ The synchronized binaries and APK outputs are intentionally ignored by Git. GitH
 - Hash-verified `production-test-1.14` four-image firmware package
 - Board eFuse MAC identity and metadata
 - Twenty-sample VIN and raw ADC result
+- Battery-voltage check toggle in Test Setup, enabled by default
 - Board-side Wi-Fi and BLE scanning with RSSI data
 - Guided LED, buttons A–D, and user-switch checks
 - Persistent red failure latch and green pass confirmation

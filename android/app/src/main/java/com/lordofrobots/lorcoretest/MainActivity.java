@@ -31,7 +31,7 @@ public final class MainActivity extends Activity {
     private TextView connectionText, instructionText, percentText, historyDetails, firmwareText, setupToggleText;
     private Button runButton, ledGoodButton, ledFailButton, liveTab, historyTab;
     private ProgressBar progress;
-    private Switch autoStart;
+    private Switch autoStart, checkVoltage;
     private EditText operatorInput, labelInput, vinInput, toleranceInput, ssidInput, rssiInput;
     private volatile boolean running;
     private CountDownLatch ledLatch;
@@ -91,7 +91,7 @@ public final class MainActivity extends Activity {
         LinearLayout brandRow = row(); brandRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(brandRow, lp(-1, dp(46)));
         ImageView logo = new ImageView(this); logo.setImageResource(com.lordofrobots.lorcoretest.R.drawable.lor_logo); logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         brandRow.addView(logo, lp(dp(138), -1));
-        TextView title = text("CORE V3  ·  " + BuildConfig.VERSION_NAME, 13, BLUE, true); title.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); title.setSingleLine(true); brandRow.addView(title, weight(1));
+        TextView title = text("PRODUCTION TESTING", 13, BLUE, true); title.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); title.setSingleLine(true); brandRow.addView(title, weight(1));
         LinearLayout controlRow = row(); controlRow.setGravity(Gravity.CENTER_VERTICAL); header.addView(controlRow, lp(-1, dp(48)));
         connectionText = pill("NO BOARD", Color.rgb(102,117,138)); controlRow.addView(connectionText, weight(1));
         autoStart = new Switch(this); autoStart.setText(" AUTO-START"); autoStart.setTextColor(BLUE); autoStart.setTextSize(13); autoStart.setChecked(getPreferences(0).getBoolean("auto", true));
@@ -134,8 +134,13 @@ public final class MainActivity extends Activity {
         setupContent = new LinearLayout(this); setupContent.setOrientation(LinearLayout.VERTICAL); setupContent.setVisibility(View.GONE); setupCard.addView(setupContent, lp(-1,-2));
         LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); setupContent.addView(form, lp(-1,-2));
         operatorInput = field(form, "Operator", ""); labelInput = field(form, "Board serial / label", "");
+        checkVoltage = new Switch(this); checkVoltage.setText("CHECK BATTERY VOLTAGE"); checkVoltage.setTextColor(BLUE); checkVoltage.setTextSize(12); checkVoltage.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        checkVoltage.setGravity(Gravity.CENTER_VERTICAL); checkVoltage.setChecked(getPreferences(0).getBoolean("check_voltage", true));
+        form.addView(checkVoltage, marginLp(-1,dp(48),0,dp(8),0,dp(4)));
         LinearLayout voltage = row(); form.addView(voltage, lp(-1, dp(70)));
         vinInput = miniField(voltage, "Fixture VIN", "9.0"); toleranceInput = miniField(voltage, "Tolerance", "3.0");
+        checkVoltage.setOnCheckedChangeListener((v, checked) -> { getPreferences(0).edit().putBoolean("check_voltage", checked).apply(); setVoltageInputsEnabled(checked); });
+        setVoltageInputsEnabled(checkVoltage.isChecked());
         ssidInput = field(form, "Factory Wi-Fi SSID (optional)", ""); rssiInput = field(form, "Minimum RSSI (dBm)", "-85");
         runButton = button("CONNECT A LoR CORE", Color.rgb(150,160,174)); runButton.setEnabled(false); runButton.setTextSize(18); runButton.setOnClickListener(v -> startTest());
         content.addView(runButton, marginLp(-1, dp(60), 0, dp(10), 0, 0));
@@ -212,20 +217,21 @@ public final class MainActivity extends Activity {
 
     private void startTest() {
         if (running || detectedDriver == null || !usbManager.hasPermission(detectedDriver.getDevice())) return;
+        final boolean voltageEnabled = checkVoltage.isChecked();
         final double target, tolerance; final int rssi;
-        try { target = Double.parseDouble(vinInput.getText().toString()); tolerance = Double.parseDouble(toleranceInput.getText().toString()); rssi = Integer.parseInt(rssiInput.getText().toString()); }
-        catch (Exception error) { toast("Check the VIN, tolerance, and RSSI settings."); return; }
-        if (tolerance <= 0) { toast("VIN tolerance must be greater than zero."); return; }
+        try { target = voltageEnabled ? Double.parseDouble(vinInput.getText().toString()) : 0; tolerance = voltageEnabled ? Double.parseDouble(toleranceInput.getText().toString()) : 0; rssi = Integer.parseInt(rssiInput.getText().toString()); }
+        catch (Exception error) { toast(voltageEnabled ? "Check the VIN, tolerance, and RSSI settings." : "Check the RSSI setting."); return; }
+        if (voltageEnabled && tolerance <= 0) { toast("VIN tolerance must be greater than zero."); return; }
         running = true; runButton.setEnabled(false); runButton.setVisibility(View.GONE); resultList.removeAllViews(); resultsCard.setVisibility(View.VISIBLE); setSetupExpanded(false); progress.setProgress(0); percentText.setText("0%"); showPage(true);
         String operator = operatorInput.getText().toString().trim(), label = labelInput.getText().toString().trim(), ssid = ssidInput.getText().toString().trim();
         boolean flashOnly = BuildConfig.DEBUG && getIntent().getBooleanExtra("diagnostic_flash_only", false);
         boolean handshakeOnly = BuildConfig.DEBUG && getIntent().getBooleanExtra("diagnostic_handshake_only", false);
         getIntent().removeExtra("diagnostic_flash_only");
         getIntent().removeExtra("diagnostic_handshake_only");
-        worker.submit(() -> runProductionTest(operator, label, target, tolerance, ssid, rssi, flashOnly, handshakeOnly));
+        worker.submit(() -> runProductionTest(operator, label, target, tolerance, ssid, rssi, voltageEnabled, flashOnly, handshakeOnly));
     }
 
-    private void runProductionTest(String operator, String label, double target, double tolerance, String ssid, int minRssi, boolean flashOnly, boolean handshakeOnly) {
+    private void runProductionTest(String operator, String label, double target, double tolerance, String ssid, int minRssi, boolean voltageEnabled, boolean flashOnly, boolean handshakeOnly) {
         Map<String,String> record = blankRecord(); JSONArray details = new JSONArray(); BoardSession board = null;
         boolean testStarted = false;
         record.put("timestamp_utc", Instant.now().toString()); record.put("operator", operator); record.put("serial_label", label); record.put("com_port", "USB/CH340 Android"); record.put("control_mapping", "Confirmed LoR Core V3 mapping");
@@ -257,9 +263,13 @@ public final class MainActivity extends Activity {
             board.result("TEST_START", "TEST_START", 5000);
             testStarted = true;
 
-            status("Reading the 20-sample battery voltage average...");
-            JSONObject vin = board.result(String.format(Locale.US,"VIN %.3f %.3f", target-tolerance, target+tolerance), "VIN", 8000); Map<String,String> vd = BoardSession.details(vin.optString("details"));
-            record.put("vin_volts",vd.getOrDefault("volts","")); record.put("vin_pass",Boolean.toString(vin.optBoolean("pass"))); addResult(details,"Battery voltage",vin.optBoolean("pass"),vin.optString("details"));
+            if (voltageEnabled) {
+                status("Reading the 20-sample battery voltage average...");
+                JSONObject vin = board.result(String.format(Locale.US,"VIN %.3f %.3f", target-tolerance, target+tolerance), "VIN", 8000); Map<String,String> vd = BoardSession.details(vin.optString("details"));
+                record.put("vin_volts",vd.getOrDefault("volts","")); record.put("vin_pass",Boolean.toString(vin.optBoolean("pass"))); addResult(details,"Battery voltage",vin.optBoolean("pass"),vin.optString("details"));
+            } else {
+                addSkippedResult(details, "Battery voltage", "disabled in Test Setup");
+            }
 
             status("Scanning Wi-Fi and measuring RSSI..."); String wifiCommand = ssid.isEmpty() ? "WIFI " + minRssi : "WIFI " + ssid + " " + minRssi;
             JSONObject wifi = board.result(wifiCommand,"WIFI",25000); Map<String,String> wd=BoardSession.details(wifi.optString("details"));
@@ -276,7 +286,8 @@ public final class MainActivity extends Activity {
                 passed=changed.size()==1&&changed.get(0)==pins[i]; record.put(fields[i],Boolean.toString(passed)); addResult(details,names[i].replace('_',' '),passed,"expected GPIO"+pins[i]+"; changed "+(changed.isEmpty()?"none":changed));
                 if(i<4&&passed) { status("RELEASE "+names[i].replace('_',' ')+"."); long release=System.currentTimeMillis()+8000; while(System.currentTimeMillis()<release&&Objects.equals(board.inputs().get(pins[i]),1-baseline.get(pins[i]))) Thread.sleep(80); }
             }
-            boolean overall=true; for(String field:new String[]{"vin_pass","wifi_pass","bluetooth_pass","btn_a_pass","btn_b_pass","btn_c_pass","btn_d_pass","switch_pass","led_pass"}) overall &= "true".equals(record.get(field));
+            boolean overall=true; for(String field:new String[]{"wifi_pass","bluetooth_pass","btn_a_pass","btn_b_pass","btn_c_pass","btn_d_pass","switch_pass","led_pass"}) overall &= "true".equals(record.get(field));
+            if (voltageEnabled) overall &= "true".equals(record.get("vin_pass"));
             record.put("overall_pass",Boolean.toString(overall));
             if(overall) { status("PASS — LEDs green for two seconds, then return to icy blue."); board.result("TEST_PASS","TEST_PASS",6000); }
             else { status("FAIL — board LEDs are locked red across power cycles."); board.result("TEST_FAIL","TEST_FAIL",5000); }
@@ -313,6 +324,12 @@ public final class MainActivity extends Activity {
         setupToggleText.setText(expanded ? "HIDE" : "SHOW");
     }
 
+    private void setVoltageInputsEnabled(boolean enabled) {
+        if (vinInput == null || toleranceInput == null) return;
+        vinInput.setEnabled(enabled); toleranceInput.setEnabled(enabled);
+        vinInput.setAlpha(enabled ? 1f : 0.45f); toleranceInput.setAlpha(enabled ? 1f : 0.45f);
+    }
+
     private boolean awaitLed() throws InterruptedException {
         ledAnswer=null; ledLatch=new CountDownLatch(1); ui(() -> ledActionRow.setVisibility(View.VISIBLE));
         boolean answered=ledLatch.await(120,TimeUnit.SECONDS); ui(this::hideLedButtons); return answered&&Boolean.TRUE.equals(ledAnswer);
@@ -322,9 +339,18 @@ public final class MainActivity extends Activity {
 
     private void addResult(JSONArray details,String name,boolean passed,String description) throws JSONException {
         JSONObject row=new JSONObject(); row.put("test",name); row.put("pass",passed); row.put("details",description); details.put(row);
+        addResultRow(passed?"PASS":"FAIL", passed?GREEN:RED, name, description);
+    }
+
+    private void addSkippedResult(JSONArray details,String name,String description) throws JSONException {
+        JSONObject row=new JSONObject(); row.put("test",name); row.put("skipped",true); row.put("details",description); details.put(row);
+        addResultRow("SKIP", Color.rgb(102,117,138), name, description);
+    }
+
+    private void addResultRow(String result,int resultColor,String name,String description) {
         ui(() -> {
             LinearLayout card=new LinearLayout(this); card.setPadding(dp(14),dp(11),dp(14),dp(11)); card.setGravity(Gravity.TOP); card.setBackground(bg(Color.rgb(247,249,252),10));
-            TextView mark=text(passed?"PASS":"FAIL",12,passed?GREEN:RED,true); mark.setGravity(Gravity.TOP); card.addView(mark,lp(dp(58),-2));
+            TextView mark=text(result,12,resultColor,true); mark.setGravity(Gravity.TOP); card.addView(mark,lp(dp(58),-2));
             LinearLayout words=new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL);
             TextView title=text(name,15,Color.rgb(20,36,58),true); title.setSingleLine(false); words.addView(title,lp(-1,-2));
             TextView detail=text(description==null?"":description,12,Color.rgb(102,117,138),false); detail.setSingleLine(false); detail.setLineSpacing(0,1.08f); detail.setPadding(0,dp(3),0,0); words.addView(detail,lp(-1,-2));
@@ -347,8 +373,9 @@ public final class MainActivity extends Activity {
         } catch(Exception error){ historyList.addView(text("History could not be loaded: "+error.getMessage(),14,RED,false)); }
     }
     private void showHistoryRecord(Map<String,String> record) {
-        StringBuilder text=new StringBuilder(); text.append("BOARD\n").append(record.getOrDefault("board_id","—")).append("\n\nRESULT  ").append("true".equalsIgnoreCase(record.get("overall_pass"))?"PASS":"FAIL").append("\nTIMESTAMP  ").append(record.getOrDefault("timestamp_utc","—")).append("\nOPERATOR  ").append(record.getOrDefault("operator","—")).append("\nFIRMWARE  ").append(record.getOrDefault("firmware","—")).append("\n\nMEASUREMENTS\nVIN  ").append(record.getOrDefault("vin_volts","—")).append(" V\nWi-Fi RSSI  ").append(record.getOrDefault("wifi_rssi_dbm","—")).append(" dBm\nNetworks  ").append(record.getOrDefault("wifi_networks","—")).append("\n\nCHECKS\n");
-        try { JSONArray rows=new JSONArray(record.getOrDefault("details_json","[]")); for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i); text.append(row.optBoolean("pass")?"✓ ":"✕ ").append(row.optString("test")).append("\n   ").append(row.optString("details")).append("\n");} } catch(Exception ignored){text.append(record.getOrDefault("details_json",""));}
+        String vin=record.getOrDefault("vin_volts","");
+        StringBuilder text=new StringBuilder(); text.append("BOARD\n").append(record.getOrDefault("board_id","—")).append("\n\nRESULT  ").append("true".equalsIgnoreCase(record.get("overall_pass"))?"PASS":"FAIL").append("\nTIMESTAMP  ").append(record.getOrDefault("timestamp_utc","—")).append("\nOPERATOR  ").append(record.getOrDefault("operator","—")).append("\nFIRMWARE  ").append(record.getOrDefault("firmware","—")).append("\n\nMEASUREMENTS\nVIN  ").append(vin.isEmpty()?"Not checked":vin+" V").append("\nWi-Fi RSSI  ").append(record.getOrDefault("wifi_rssi_dbm","—")).append(" dBm\nNetworks  ").append(record.getOrDefault("wifi_networks","—")).append("\n\nCHECKS\n");
+        try { JSONArray rows=new JSONArray(record.getOrDefault("details_json","[]")); for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i); text.append(row.optBoolean("skipped")?"– ":row.optBoolean("pass")?"✓ ":"✕ ").append(row.optString("test")).append("\n   ").append(row.optString("details")).append("\n");} } catch(Exception ignored){text.append(record.getOrDefault("details_json",""));}
         historyDetails.setText(text.toString());
     }
 
