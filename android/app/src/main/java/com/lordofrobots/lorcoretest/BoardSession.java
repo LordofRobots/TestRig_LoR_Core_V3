@@ -26,7 +26,8 @@ final class BoardSession {
         throw new java.util.concurrent.TimeoutException("Board did not answer " + command);
     }
 
-    JSONObject info() throws Exception { return command("INFO", "info", null, 8000); }
+    JSONObject info() throws Exception { return info(8000); }
+    JSONObject info(long timeoutMs) throws Exception { return command("INFO", "info", null, timeoutMs); }
     JSONObject result(String command, String test, long timeoutMs) throws Exception { return command(command, "result", test, timeoutMs); }
 
     Map<Integer, Integer> inputs() throws Exception {

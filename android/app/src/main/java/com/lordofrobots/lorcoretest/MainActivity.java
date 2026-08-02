@@ -219,12 +219,15 @@ public final class MainActivity extends Activity {
         running = true; runButton.setEnabled(false); runButton.setVisibility(View.GONE); resultList.removeAllViews(); resultsCard.setVisibility(View.VISIBLE); setSetupExpanded(false); progress.setProgress(0); percentText.setText("0%"); showPage(true);
         String operator = operatorInput.getText().toString().trim(), label = labelInput.getText().toString().trim(), ssid = ssidInput.getText().toString().trim();
         boolean flashOnly = BuildConfig.DEBUG && getIntent().getBooleanExtra("diagnostic_flash_only", false);
+        boolean handshakeOnly = BuildConfig.DEBUG && getIntent().getBooleanExtra("diagnostic_handshake_only", false);
         getIntent().removeExtra("diagnostic_flash_only");
-        worker.submit(() -> runProductionTest(operator, label, target, tolerance, ssid, rssi, flashOnly));
+        getIntent().removeExtra("diagnostic_handshake_only");
+        worker.submit(() -> runProductionTest(operator, label, target, tolerance, ssid, rssi, flashOnly, handshakeOnly));
     }
 
-    private void runProductionTest(String operator, String label, double target, double tolerance, String ssid, int minRssi, boolean flashOnly) {
+    private void runProductionTest(String operator, String label, double target, double tolerance, String ssid, int minRssi, boolean flashOnly, boolean handshakeOnly) {
         Map<String,String> record = blankRecord(); JSONArray details = new JSONArray(); BoardSession board = null;
+        boolean testStarted = false;
         record.put("timestamp_utc", Instant.now().toString()); record.put("operator", operator); record.put("serial_label", label); record.put("com_port", "USB/CH340 Android"); record.put("control_mapping", "Confirmed LoR Core V3 mapping");
         try {
             FirmwareRepository.Package firmware = new FirmwareRepository(this).loadBundled();
@@ -242,12 +245,17 @@ public final class MainActivity extends Activity {
                 status("UPLOAD VERIFIED — firmware programmed successfully. Production checks were not started.");
                 return;
             }
-            status("Waiting for the LoR Core startup animation..."); Thread.sleep(2900); activeTransport.drain(); board = new BoardSession(activeTransport);
-            JSONObject info = board.info();
+            board = new BoardSession(activeTransport);
+            JSONObject info = waitForBoardInfo(board);
             if (!"LoR Core V3".equals(info.optString("product"))) throw new IllegalStateException("Programmed device did not return the LoR Core V3 handshake");
             record.put("board_id", info.optString("mac")); record.put("firmware", info.optString("firmware")); record.put("chip", info.optString("chip")); record.put("chip_revision", info.optString("revision")); record.put("flash_bytes", info.optString("flash_bytes"));
             addResult(details, "Board identity", true, "ID " + record.get("board_id") + " / " + record.get("firmware"));
+            if (handshakeOnly) {
+                status("UPLOAD + STARTUP VERIFIED — board firmware answered INFO. Production checks were not started.");
+                return;
+            }
             board.result("TEST_START", "TEST_START", 5000);
+            testStarted = true;
 
             status("Reading the 20-sample battery voltage average...");
             JSONObject vin = board.result(String.format(Locale.US,"VIN %.3f %.3f", target-tolerance, target+tolerance), "VIN", 8000); Map<String,String> vd = BoardSession.details(vin.optString("details"));
@@ -274,10 +282,29 @@ public final class MainActivity extends Activity {
             else { status("FAIL — board LEDs are locked red across power cycles."); board.result("TEST_FAIL","TEST_FAIL",5000); }
             record.put("details_json",details.toString()); csvStore.append(record); complete(overall,record.get("board_id"));
         } catch(Exception error) {
-            if(board!=null) try { board.result("TEST_FAIL","TEST_FAIL",4000); } catch(Exception ignored) { }
-            try { record.put("overall_pass","false"); addResult(details,"Upload / station",false,error.getMessage()); record.put("details_json",details.toString()); if (!flashOnly) csvStore.append(record); } catch(Exception ignored) { }
+            if(testStarted && board!=null) try { board.result("TEST_FAIL","TEST_FAIL",4000); } catch(Exception ignored) { }
+            try { record.put("overall_pass","false"); addResult(details,"Upload / station",false,error.getMessage()); record.put("details_json",details.toString()); if (!flashOnly && !handshakeOnly) csvStore.append(record); } catch(Exception ignored) { }
             ui(() -> { statusDirect("TEST STOPPED — " + (error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()), RED); toast("Production test failed"); });
         } finally { closeTransport(); running=false; ui(() -> { hideLedButtons(); setSetupExpanded(false); runButton.setVisibility(View.VISIBLE); refreshUsb(false); loadHistory(); }); }
+    }
+
+    private JSONObject waitForBoardInfo(BoardSession board) throws Exception {
+        status("Waiting for the LoR Core startup animation...");
+        Thread.sleep(4200);
+        activeTransport.drain();
+        try {
+            return board.info(5000);
+        } catch (java.util.concurrent.TimeoutException firstFailure) {
+            status("Firmware handshake delayed — resetting the board and retrying...");
+            activeTransport.hardReset();
+            Thread.sleep(4200);
+            activeTransport.drain();
+            try {
+                return board.info(6000);
+            } catch (java.util.concurrent.TimeoutException secondFailure) {
+                throw new java.util.concurrent.TimeoutException("Board did not answer INFO after startup and one automatic reset");
+            }
+        }
     }
 
     private void setSetupExpanded(boolean expanded) {

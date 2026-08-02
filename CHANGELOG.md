@@ -21,6 +21,7 @@ All notable production changes are recorded here. Application versions follow se
 - Added Android 16 KB memory-page alignment and limited APK native binaries to ARM phone architectures
 - Collapsed Test Setup into an expandable section so live results receive the available portrait space
 - Moved the primary Run Production Test action above Test Setup and hid it during active tests
+- Made the post-flash firmware handshake wait through the complete startup animation and retry after one automatic hard reset
 
 ## [1.14.2] - 2026-08-01
 

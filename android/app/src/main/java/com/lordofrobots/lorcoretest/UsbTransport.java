@@ -51,6 +51,16 @@ final class UsbTransport implements AutoCloseable {
         port.setRTS(rts);
     }
 
+    synchronized void hardReset() throws Exception {
+        configure(115200);
+        setLines(false, false);
+        Thread.sleep(50);
+        setLines(false, true);
+        Thread.sleep(150);
+        setLines(false, false);
+        Thread.sleep(150);
+    }
+
     synchronized String diagnostics() {
         return "driver=" + port.getDriver().getClass().getSimpleName()
                 + ", tx=" + bytesWritten + " bytes, rx=" + bytesRead + " bytes"

@@ -275,7 +275,7 @@ Java_com_lordofrobots_lorcoretest_Esp32Flasher_nativeFlash(
 
     notify_status("Firmware verified; restarting LoR Core V3...");
     notify_progress(100);
-    esp_loader_reset_target();
     call_configure(ROM_BAUD);
+    esp_loader_reset_target();
     return nullptr;
 }
