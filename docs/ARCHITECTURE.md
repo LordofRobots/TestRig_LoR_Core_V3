@@ -1,76 +1,148 @@
 # System Architecture
 
-## Purpose
+## Design objective
 
-The LoR Core V3 Production Test Rig separates operator workflow, board-side hardware access, release packaging, and manufacturing records. Production PCs run a self-contained Windows application; build tools remain confined to development and release-builder machines.
+The LoR Core V3 Production Test System separates platform-specific operator interfaces from one board protocol and one approved firmware implementation. Windows and Android can be deployed independently, but a board receives equivalent test logic and fail-safe behavior from either station.
 
 ## Components
 
 | Component | Responsibility |
 |---|---|
-| Windows test station | Board detection, firmware upload, guided workflow, result evaluation, history, and updates |
-| Android test station | USB-host/CH340 transport, native ESP32 upload, guided workflow, history, and CSV export |
-| ESP32 production firmware | LoR-specific measurements, RF scans, control input detection, LED behavior, and persistent failure state |
-| Bundled esptool | Programs the approved ESP32 flash image set without Arduino IDE |
-| NSIS installer | Installs the frozen application for all users and preserves ProgramData records |
-| GitHub Release | Publishes the installer, firmware ZIP, and hash-verified update manifest |
-| CSV audit log | Stores one append-only row for every attempted production test |
+| Windows station | COM detection, verified upload, guided workflow, history, CSV, and automatic updates |
+| Android station | USB Host/CH340 transport, native upload, guided workflow, history, and CSV export |
+| Production firmware | Hardware measurements, RF scans, controls, LEDs, identity, and persistent state |
+| Firmware manifest/package | Product/protocol identity, exact flash layout, and SHA-256 trust metadata |
+| Windows installer | Machine-wide frozen runtime, shortcuts, permissions, and preserved ProgramData |
+| GitHub Release | Public Windows installer, common firmware ZIP, and update manifest |
+| Local CSV | Append-only manufacturing traceability owned by each station |
 
-The Android and Windows clients remain independent front ends. They share the GitHub Release firmware manifest, exact flash layout, board protocol, result fields, and fail-safe behavior; neither platform depends on the other at runtime.
-
-## Production flow
+## Runtime topology
 
 ```text
-USB connection
-    |
-CH340/WCH COM-port detection
-    |
-Verified production firmware upload
-    |
-Serial identity and protocol handshake
-    |
-VIN -> Wi-Fi -> BLE -> LEDs -> buttons/switch
-    |
-TEST_PASS or TEST_FAIL persisted on the board
-    |
-Append CSV record and display result history
+                         Public GitHub Release
+                       /                       \
+        runtime update/                         \build-time sync
+                     v                           v
+          Windows production app          Android production APK
+                    \                         /
+                     \ USB serial / CH340   /
+                      v                     v
+                         LoR Core V3 ESP32
+                                  |
+                  production-test firmware / NVS
 ```
 
-The board never runs VIN, Wi-Fi, BLE, or production input checks merely because it powered up. These operations execute only after explicit serial commands from the station. Idle firmware work is limited to serial polling, button-color feedback, and LED presentation.
+Windows can use bundled or newer cached firmware at runtime. Android validates and embeds the common package when the APK is built. Neither platform depends on the other at runtime, and neither needs the network to test a board.
 
-## Failure safety
+## Production transaction
 
-`TEST_START` provisionally writes failure to ESP32 NVS before measurements begin. Only `TEST_PASS` clears the latch. A failed check, application crash, power interruption, or unplugged board therefore returns to locked red after the next startup presentation rather than appearing untested or passed.
+```text
+Board attached
+    -> transport selected and opened
+    -> ESP32 ROM bootloader entered
+    -> four approved images programmed
+    -> target reset
+    -> startup animation completes
+    -> INFO identity/protocol handshake
+    -> TEST_START stores provisional failure
+    -> VIN (when required)
+    -> Wi-Fi
+    -> BLE
+    -> LED operator confirmation
+    -> buttons A-D and switch
+    -> TEST_PASS or TEST_FAIL
+    -> local CSV append
+    -> Test History refresh
+```
 
-## Data locations
+Upload/handshake diagnostics used during development stop before `TEST_START` and do not create production records or alter the board's pass/fail latch.
 
-| Data | Installed location | Upgrade behavior |
+## Fail-safe state machine
+
+```text
+Power on
+   |
+   v
+Rainbow startup
+   |
+   +-- NVS failed = true  --> locked red
+   |
+   +-- NVS failed = false --> icy-blue idle
+
+TEST_START --> write failed=true
+   |
+   +-- any failure/interruption --> remains failed=true
+   |
+   +-- all required checks pass --> TEST_PASS --> write failed=false
+```
+
+Only a complete pass clears failure. This makes power loss and station failure conservative.
+
+## Firmware execution model
+
+The board does not autonomously run measurements at power-up. Idle firmware work is limited to:
+
+- reading persistent NVS state;
+- playing the startup presentation;
+- rendering icy-blue idle or locked red;
+- showing button color feedback when not red-latched;
+- polling USB serial for commands.
+
+VIN, Wi-Fi, BLE, LED demo, and production input snapshots occur only in response to host commands. This prevents RF scans and ADC work from disrupting the baseline LED animation.
+
+## Hardware abstraction boundary
+
+The firmware owns LoR-specific pins and measurements. The clients own transport, workflow, configuration, user prompts, and audit data.
+
+| Firmware-owned | Client-owned |
+|---|---|
+| GPIO mapping | Board detection and USB permission |
+| ADC sampling/calibration | Firmware package selection/validation |
+| Wi-Fi/BLE scan implementation | Thresholds and required/optional checks |
+| LED presentation and persistent red | Operator prompts and confirmation |
+| NVS pass/fail state | CSV append and history display |
+
+## Package trust boundary
+
+An approved manifest must match:
+
+- schema 1;
+- product `LoR Core V3`;
+- serial protocol 1;
+- a `production-test-x.y` firmware version;
+- exactly four safe filenames;
+- addresses `0x1000`, `0x8000`, `0xe000`, and `0x10000`;
+- package and per-image SHA-256 values.
+
+Windows also validates the application installer hash from the update manifest. Validation failure never replaces the current verified artifact.
+
+## Platform-specific transport
+
+### Windows
+
+The UI discovers serial ports and invokes the bundled standalone esptool at 921600 baud for programming. It then opens the board protocol at 115200 baud through pyserial.
+
+### Android
+
+The app uses Android USB Host APIs and `usb-serial-for-android` for CH340 access. Native Espressif ESP Serial Flasher code enters the ROM bootloader, uploads the stub, writes each image, verifies MD5, and resets the target. The Java protocol session then operates at 115200 baud.
+
+## Data architecture
+
+There is no central service. Each platform appends the same ordered CSV schema locally. `details_json` retains raw/structured evidence not represented by dedicated columns. See [Data and Traceability](DATA_AND_TRACEABILITY.md).
+
+## Installed data locations
+
+| Data | Windows | Android |
 |---|---|---|
-| Application runtime | `C:\Program Files\Lord of Robots\LoR Core V3 Test Station` | Replaced cleanly |
-| Test results | `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\results` | Preserved |
-| Firmware cache | `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\firmware` | Preserved and revalidated |
-| Downloaded updates | `C:\ProgramData\Lord of Robots\LoR Core V3 Test Station\updates` | Preserved |
+| Application | Program Files | APK-managed app directory |
+| Results | ProgramData CSV | Private app storage |
+| Firmware | Bundled plus verified ProgramData cache | Verified APK assets |
+| Updates | Verified ProgramData downloads | Manual APK installation |
 
-## Update sequence
+## Resource and lifecycle design
 
-1. The frozen application starts from its bundled, verified firmware package.
-2. A daemon thread queries public, published GitHub Releases once after startup.
-3. Draft and prerelease releases are ignored.
-4. The manifest identity and version are validated.
-5. New packages are downloaded only when their version is greater than the active version.
-6. Package and per-image SHA-256 values are verified before activation.
-7. Firmware ZIP paths and the four approved flash addresses are validated.
-8. A failed check leaves the installed application and last verified firmware active.
+Windows reuses a single animated-image buffer, pauses animation while minimized, lazy-loads history, and caps displayed rows at 2,000. Android uses one activity, one single-thread production executor, bounded result/history views, and closes the USB transport in every completion path. App destruction unregisters the USB receiver and stops the worker.
 
-The updater carries no GitHub credential and runs no resident service. Repository availability is not required to continue production testing.
+## Version compatibility
 
-## Version ownership
-
-- `VERSION` is the authoritative Windows application version.
-- The firmware sketch declares `production-test-x.y` and protocol version 1.
-- `build-installer.ps1` reads both versions, builds all artifacts, and generates the release manifest.
-- GitHub Release tags use `v<application-version>`.
-
-## Resource profile
-
-The UI uses Tkinter and a one-directory frozen Python runtime. The animated logo reuses a single image buffer and pauses while minimized. Test History is lazy-loaded and retains at most 2,000 display records in memory; the complete audit CSV remains on disk. Verified steady-state private memory is approximately 25 MB on the reference Windows 11 station.
+Protocol version is the host/firmware compatibility boundary. A client rejects a wrong product or unsupported manifest protocol. Firmware version and app version evolve independently as documented in [Release Process](RELEASE_PROCESS.md).

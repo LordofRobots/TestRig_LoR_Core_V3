@@ -2,11 +2,12 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest published Windows application and production-test firmware only.
+Security fixes are applied to the current production applications and production-test firmware.
 
 | Component | Supported version |
 |---|---:|
 | Windows test station | Latest GitHub Release |
+| Android test station | Latest internally approved APK |
 | Board test firmware | Firmware bundled with the latest Release |
 
 ## Reporting a vulnerability
@@ -24,3 +25,5 @@ Include the affected version, reproduction steps, expected impact, and the minim
 The station downloads only published, non-prerelease GitHub Release assets over HTTPS. It validates the release manifest, product identity, versions, package SHA-256 values, individual firmware-image SHA-256 values, and the exact approved ESP32 flash layout. Invalid or unavailable updates are rejected without replacing the active application or firmware.
 
 The current installer is not Authenticode-signed, so Windows may show an unknown-publisher warning. Code signing remains recommended as a future defense-in-depth improvement.
+
+Android is manually distributed. Approved APK updates must retain the same protected signing identity so they can be installed in place without clearing private production history. Keystores, passwords, private production CSVs, and board/operator identifiers must never be committed to this repository.

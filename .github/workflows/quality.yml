@@ -38,6 +38,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Build Android engineering APK
+      - name: Build Android production client
         working-directory: android
-        run: .\gradlew.bat assembleDebug
+        run: .\gradlew.bat lintDebug assembleDebug

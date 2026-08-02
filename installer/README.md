@@ -1,5 +1,7 @@
 # Windows Installer
 
+This guide covers the Windows packaging implementation. For the cross-platform version, validation, and publication sequence, start with [Build, Validation, and Release Process](../docs/RELEASE_PROCESS.md).
+
 `build-installer.ps1` creates a self-contained, machine-wide Windows installer for the LoR Core V3 Production Test Station.
 
 ## Operator package contents

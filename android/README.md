@@ -1,74 +1,173 @@
-# LoR Core V3 Android Test Station
+# LoR Core V3 Android Production Station
 
-The Android client is a lightweight, native companion to the Windows production station. It uses the same board firmware, serial protocol, production checks, pass/fail behavior, and CSV field schema.
+The Android application is the portable production client for the LoR Core V3. It connects directly through Android USB Host/OTG, programs the same approved ESP32 firmware used by Windows, guides the complete test, stores local history, and exports Windows-compatible CSV records.
 
-## Current status
+Version **1.0.0** is the production baseline validated on the Pixel 6 reference path. Qualify every different phone/tablet, Android version, hub, and cable combination before manufacturing use.
 
-Version `0.1.0` is an engineering preview. The APK builds, installs, and runs in portrait mode on a Pixel 6. Real-device validation has confirmed Android USB-host operation, CH340 detection, persistent USB permission, automatic ESP32 loader entry, four-image flashing, byte-accurate progress, MD5 verification, and target reset. The complete guided production workflow must still pass the production-validation checklist before production use.
+## Platform requirements
 
-## Device requirements
-
-- Android 8.0 (API 26) or newer
+- Android 8.0 / API 26 or newer
+- ARMv7 or ARM64 processor
 - USB Host/OTG support
-- Portrait display on a phone or tablet
-- USB-C data/OTG cable or powered USB-C hub
-- LoR Core fixture power of 6–12 V through XT30
+- Portrait phone or tablet display
+- USB-C data/OTG cable or a powered USB-C hub
+- LoR Core fixture supply from 6.0 V to 12.0 V through XT30
+- WCH/QinHeng CH340 USB interface on the board
 
-The app recognizes the WCH/QinHeng CH340 family used by the LoR Core. Android asks the operator to authorize USB access. No root access or system USB driver is required.
+No root access, Arduino IDE, Python, esptool command-line installation, or Android USB driver is required on the operator device.
 
-## Install the engineering APK
+## Installation and updates
 
-1. Copy `app/build/outputs/apk/debug/app-debug.apk` to the Android device.
-2. Allow installation from the selected file-manager source when Android requests it.
-3. Install **LoR Core V3 Test Station**.
-4. Connect one LoR Core with a USB-C OTG/data connection.
-5. Grant USB access and follow the live-test prompts.
+The app is manually distributed and is not published through Google Play.
 
-The debug APK is intended for fixture validation. A permanent Android signing key must be configured before publishing a production APK.
+1. Obtain the approved APK from the internal manufacturing release.
+2. On Android, allow installation from the file manager or browser used to open it.
+3. Open the APK and install **LoR Core V3 Test Station**.
+4. Launch it once and confirm the header reads **Production Testing**.
+5. Connect the board and grant the app USB access when Android asks.
 
-## Build
+Install future APKs over the existing app. They must use the same package ID and signing key. Uninstalling the app or clearing its storage deletes the private test-history CSV, so export records first.
 
-From PowerShell at the repository root:
+The repository's standard debug build is suitable for controlled internal deployment and hardware validation. Before distributing broadly, configure a protected stable release key as described in [Release Process](../docs/RELEASE_PROCESS.md). Never commit a keystore or password.
+
+## Operator workflow
+
+1. Apply 6-12 V fixture power to the LoR Core.
+2. Connect the LoR Core to the Android device through the qualified USB Host path.
+3. Grant USB access if prompted and wait for **LoR CORE READY**.
+4. Choose Auto-start:
+   - On starts one test for each newly attached physical board.
+   - Off requires **Run Production Test**.
+5. Expand **Test Setup** when configuration is required.
+6. Optionally enter operator and printed board label values.
+7. Leave **Check Battery Voltage** enabled for the normal complete test. Disable it only when the approved manufacturing procedure intentionally omits VIN.
+8. Set Fixture VIN and Tolerance. Defaults 9.0 and 3.0 create the 6.0-12.0 V window.
+9. Optionally enter the exact factory Wi-Fi SSID and set the RSSI floor (default -85 dBm).
+10. Start the test and keep USB and fixture power connected through upload and startup.
+11. Approve or reject the visible rainbow/icy-blue LED presentation.
+12. Follow the high-visibility prompts for buttons A-D and the switch.
+13. Confirm the final PASS/FAIL result and review Test History.
+
+During upload, the progress bar reports bytes written across the actual firmware images. It may briefly remain at 0% while the app enters the ESP32 ROM bootloader and uploads the loader stub.
+
+## Test Setup controls
+
+| Control | Purpose |
+|---|---|
+| Operator | Optional initials/name stored in CSV |
+| Board serial / label | Optional printed manufacturing identifier |
+| Check Battery Voltage | Default-on VIN check; disabled means `SKIP` |
+| Fixture VIN | Nominal fixture voltage |
+| Tolerance | Plus/minus voltage tolerance |
+| Factory Wi-Fi SSID | Optional exact AP to require |
+| Minimum RSSI | Lowest accepted Wi-Fi RSSI in dBm |
+
+The eFuse MAC is always collected as `board_id`; it does not depend on the optional label.
+
+## Production sequence
+
+- Android USB permission and CH340 open
+- Native ESP32 ROM/stub synchronization
+- Four-image erase/write with MD5 verification
+- Hard reset and startup wait
+- LoR Core identity/protocol handshake
+- Fail-safe `TEST_START`
+- Optional 20-sample VIN and raw ADC
+- Wi-Fi scan/RSSI
+- Active BLE scan
+- Operator LED approval
+- Automatic buttons A-D and switch transitions
+- Persistent `TEST_PASS` or `TEST_FAIL`
+- Local CSV append and Test History update
+
+The native uploader is based on Espressif ESP Serial Flasher 1.11.0 and a CH340 Android transport. The APK contains only ARM ABIs and supports Android 16 KB memory pages.
+
+## Results and export
+
+Test History shows saved runs and the detailed data for the selected board. The working CSV is in private application storage and survives normal in-place updates.
+
+To create a backup:
+
+1. Open **Test History**.
+2. Select **Export CSV**.
+3. Choose a controlled manufacturing location in Android's document picker.
+4. Verify the newest board appears in the exported file.
+
+See [Data and Traceability](../docs/DATA_AND_TRACEABILITY.md) before operating multiple local stations.
+
+## Battery-check skip behavior
+
+When **Check Battery Voltage** is off:
+
+- VIN and Tolerance inputs are disabled visually;
+- the firmware receives no `VIN` command;
+- live results show `SKIP` rather than PASS or FAIL;
+- CSV `vin_volts` and `vin_pass` remain blank;
+- VIN is excluded from the overall result.
+
+This option accommodates fixtures that cannot provide the battery input. It must not be used to hide a failed battery-sense circuit when VIN is required by the production procedure.
+
+## Build from source
+
+### Prerequisites
+
+- JDK 17 or newer
+- Android SDK Platform 36
+- Android Platform Tools
+- Android NDK `27.3.13750724`
+- CMake 3.22.1
+
+Android Studio can provide these components, but it is not required on the production operator device.
+
+### Synchronize the shared firmware
+
+From the repository root:
 
 ```powershell
-.\android\sync-firmware.ps1
-cd android
-.\gradlew.bat assembleDebug
+.\android\sync-firmware.ps1 -ForceDownload
 ```
 
-`sync-firmware.ps1` prefers the locally built Windows release package. With `-ForceDownload`, it retrieves the latest public GitHub Release manifest and firmware ZIP. It validates the package SHA-256, exact four-image flash layout, and every image SHA-256 before placing build-only copies in Android assets.
+The script downloads the latest public Release manifest and firmware package, checks SHA-256 values and the exact flash layout, and stages the verified images as ignored build assets. Omit `-ForceDownload` to prefer a package already built under `installer/output/release`.
 
-The synchronized binaries and APK outputs are intentionally ignored by Git. GitHub Releases remain the shared firmware source for both platforms.
+### Build and lint
 
-## Implemented workflow
+```powershell
+Set-Location android
+.\gradlew.bat lintDebug assembleDebug
+```
 
-- CH340 attach/detach detection and Android USB permission
-- Optional one-shot auto-start after a newly connected board is authorized
-- Espressif ESP Serial Flasher v1.11.0 with loader-stub upload, byte-accurate progress, retries, and MD5 verification
-- Hash-verified `production-test-1.14` four-image firmware package
-- Board eFuse MAC identity and metadata
-- Twenty-sample VIN and raw ADC result
-- Battery-voltage check toggle in Test Setup, enabled by default
-- Board-side Wi-Fi and BLE scanning with RSSI data
-- Guided LED, buttons A–D, and user-switch checks
-- Persistent red failure latch and green pass confirmation
-- Local CSV history using the Windows-compatible field order
-- Compact portrait live-test UI with expandable setup and scrolling test results
-- Always-visible primary Run action above Test Setup when the station is idle
-- Stacked history list/details UI optimized for portrait use, plus Android document-provider CSV export
-- 16 KB Android memory-page compatibility and ARM-only release packaging
+The APK is written to:
 
-## Production-validation checklist
+```text
+android\app\build\outputs\apk\debug\app-debug.apk
+```
 
-Before replacing a Windows station, validate on the exact tablet/hub/cable combination:
+Install through ADB when developing:
 
-1. CH340 USB permission survives repeated plug/unplug cycles.
-2. DTR/RTS enters the ESP32 ROM bootloader automatically on at least 20 boards.
-3. All four images flash and boot without manual BOOT/RESET input.
-4. A full pass, deliberate failure, unplug during test, and power cycle produce the expected LED latch.
-5. CSV export opens correctly in the chosen manufacturing archive workflow.
-6. The tablet can remain charged while acting as USB host.
+```powershell
+adb install -r .\app\build\outputs\apk\debug\app-debug.apk
+```
 
-## Data location
+## Qualification checklist
 
-The working CSV is kept in Android private application storage and survives ordinary app updates. Use **Export CSV** to write a copy through Android's document picker. Uninstalling the APK removes private application data, so export or back up results first.
+Before approving any new Android fixture combination:
+
+1. Repeat attach/permission/detach at least 20 times.
+2. Flash at least 20 boards without manual BOOT/RESET input.
+3. Confirm 0-100% progress and post-flash identity on every board.
+4. Run a complete known-good pass.
+5. Deliberately fail each test category.
+6. Interrupt after `TEST_START`, power cycle, and confirm persistent red.
+7. Complete a pass and confirm red clears after the two-second green indication.
+8. Export CSV and compare it with the Windows schema.
+9. Run the device for a full shift and confirm charging/power/thermal stability.
+
+## Known operational differences from Windows
+
+- Android application updates are manual; Windows checks public GitHub Releases automatically.
+- Android embeds firmware at APK build time; Windows can activate a newer verified firmware package at runtime.
+- Android data requires explicit export; Windows data is directly available under ProgramData.
+- Android offers an optional VIN toggle; Windows includes VIN in every production sequence.
+- Android USB behavior depends on the qualified device/hub/cable combination.
+
+For symptom-based recovery, see [Troubleshooting](../docs/TROUBLESHOOTING.md).
