@@ -20,6 +20,7 @@ All notable production changes are recorded here. Application versions follow se
 - Preserved complete CH340 USB packets in the Android native receive queue, preventing loader-response loss
 - Added Android 16 KB memory-page alignment and limited APK native binaries to ARM phone architectures
 - Collapsed Test Setup into an expandable section so live results receive the available portrait space
+- Moved the primary Run Production Test action above Test Setup and hid it during active tests
 
 ## [1.14.2] - 2026-08-01
 

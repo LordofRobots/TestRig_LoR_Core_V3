@@ -126,7 +126,7 @@ public final class MainActivity extends Activity {
         resultsCard = card(); resultsCard.setPadding(dp(18),dp(14),dp(18),dp(14)); resultsCard.addView(text("TEST RESULTS", 13, BLUE, true));
         resultList = new LinearLayout(this); resultList.setOrientation(LinearLayout.VERTICAL); resultsCard.addView(resultList, marginLp(-1,-2,0,dp(10),0,0)); resultsCard.setVisibility(View.GONE); content.addView(resultsCard, lp(-1,-2));
 
-        setupCard = card(); setupCard.setPadding(dp(18),dp(8),dp(18),dp(10)); content.addView(setupCard, marginLp(-1,-2,0,dp(10),0,0));
+        setupCard = card(); setupCard.setPadding(dp(18),dp(8),dp(18),dp(10));
         LinearLayout setupHeader = row(); setupHeader.setGravity(Gravity.CENTER_VERTICAL); setupHeader.setPadding(0,dp(2),0,dp(2));
         setupHeader.addView(text("TEST SETUP", 13, BLUE, true), weight(1));
         setupToggleText = text("SHOW", 12, BLUE, true); setupToggleText.setGravity(Gravity.END|Gravity.CENTER_VERTICAL); setupHeader.addView(setupToggleText, lp(dp(72),dp(40)));
@@ -138,7 +138,8 @@ public final class MainActivity extends Activity {
         vinInput = miniField(voltage, "Fixture VIN", "9.0"); toleranceInput = miniField(voltage, "Tolerance", "3.0");
         ssidInput = field(form, "Factory Wi-Fi SSID (optional)", ""); rssiInput = field(form, "Minimum RSSI (dBm)", "-85");
         runButton = button("CONNECT A LoR CORE", Color.rgb(150,160,174)); runButton.setEnabled(false); runButton.setTextSize(18); runButton.setOnClickListener(v -> startTest());
-        setupContent.addView(runButton, marginLp(-1, dp(60), 0, dp(12), 0, 0));
+        content.addView(runButton, marginLp(-1, dp(60), 0, dp(10), 0, 0));
+        content.addView(setupCard, marginLp(-1,-2,0,dp(10),0,0));
 
         return page;
     }
@@ -215,7 +216,7 @@ public final class MainActivity extends Activity {
         try { target = Double.parseDouble(vinInput.getText().toString()); tolerance = Double.parseDouble(toleranceInput.getText().toString()); rssi = Integer.parseInt(rssiInput.getText().toString()); }
         catch (Exception error) { toast("Check the VIN, tolerance, and RSSI settings."); return; }
         if (tolerance <= 0) { toast("VIN tolerance must be greater than zero."); return; }
-        running = true; runButton.setEnabled(false); resultList.removeAllViews(); resultsCard.setVisibility(View.VISIBLE); setSetupExpanded(false); progress.setProgress(0); percentText.setText("0%"); showPage(true);
+        running = true; runButton.setEnabled(false); runButton.setVisibility(View.GONE); resultList.removeAllViews(); resultsCard.setVisibility(View.VISIBLE); setSetupExpanded(false); progress.setProgress(0); percentText.setText("0%"); showPage(true);
         String operator = operatorInput.getText().toString().trim(), label = labelInput.getText().toString().trim(), ssid = ssidInput.getText().toString().trim();
         boolean flashOnly = BuildConfig.DEBUG && getIntent().getBooleanExtra("diagnostic_flash_only", false);
         getIntent().removeExtra("diagnostic_flash_only");
@@ -276,7 +277,7 @@ public final class MainActivity extends Activity {
             if(board!=null) try { board.result("TEST_FAIL","TEST_FAIL",4000); } catch(Exception ignored) { }
             try { record.put("overall_pass","false"); addResult(details,"Upload / station",false,error.getMessage()); record.put("details_json",details.toString()); if (!flashOnly) csvStore.append(record); } catch(Exception ignored) { }
             ui(() -> { statusDirect("TEST STOPPED — " + (error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()), RED); toast("Production test failed"); });
-        } finally { closeTransport(); running=false; ui(() -> { hideLedButtons(); setSetupExpanded(false); refreshUsb(false); loadHistory(); }); }
+        } finally { closeTransport(); running=false; ui(() -> { hideLedButtons(); setSetupExpanded(false); runButton.setVisibility(View.VISIBLE); refreshUsb(false); loadHistory(); }); }
     }
 
     private void setSetupExpanded(boolean expanded) {

@@ -53,6 +53,7 @@ The synchronized binaries and APK outputs are intentionally ignored by Git. GitH
 - Persistent red failure latch and green pass confirmation
 - Local CSV history using the Windows-compatible field order
 - Compact portrait live-test UI with expandable setup and scrolling test results
+- Always-visible primary Run action above Test Setup when the station is idle
 - Stacked history list/details UI optimized for portrait use, plus Android document-provider CSV export
 - 16 KB Android memory-page compatibility and ARM-only release packaging
 
